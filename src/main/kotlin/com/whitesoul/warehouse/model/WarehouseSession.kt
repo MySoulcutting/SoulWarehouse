@@ -4,6 +4,6 @@ import java.util.UUID
 
 data class WarehouseSession(
     val viewer: UUID,
-    var currentPage: Int? = null,
-    var navigating: Boolean = false,
+    @Volatile var currentPage: Int? = null,
+    @Volatile var navigating: Boolean = false,
 )

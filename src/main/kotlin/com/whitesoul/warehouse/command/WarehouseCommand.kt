@@ -4,6 +4,7 @@ import com.whitesoul.warehouse.config.PluginConfig
 import com.whitesoul.warehouse.config.PluginLang
 import com.whitesoul.warehouse.service.WarehouseSaveService
 import com.whitesoul.warehouse.service.WarehouseService
+import com.whitesoul.warehouse.service.WarehouseSessionService
 import com.whitesoul.warehouse.ui.WarehouseHomeMenu
 import com.whitesoul.warehouse.ui.WarehouseInspectMenu
 import com.whitesoul.warehouse.ui.WarehousePageMenu
@@ -64,6 +65,13 @@ object WarehouseCommand {
                 sender.sendLang("no-permission")
                 return@execute
             }
+            // reload 前关闭所有正在使用仓库菜单的玩家界面，避免旧缓存被菜单关闭回写覆盖新数据。
+            org.bukkit.Bukkit.getOnlinePlayers().forEach { player ->
+                if (WarehouseSessionService.hasSession(player)) {
+                    WarehouseSessionService.end(player)
+                    player.closeInventory()
+                }
+            }
             PluginConfig.reload()
             WarehouseUiConfigs.reload()
             PluginLang.reload()
@@ -85,6 +93,8 @@ object WarehouseCommand {
                 return@execute
             }
             val saved = WarehouseService.saveDirtyPages(force = true)
+            WarehouseService.saveDirtyProfiles(force = true)
+            WarehouseService.saveDirtyPageRemarks(force = true)
             sender.sendLang("command-saveall-done", saved)
         }
     }

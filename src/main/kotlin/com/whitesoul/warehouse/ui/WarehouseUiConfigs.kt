@@ -56,7 +56,7 @@ private object UiConfigSupport {
                 }
             }
         }
-        // 槽位解析遵循“配置优先 -> 默认布局 -> 剩余空位兜底”，保证 UI 文件写错时菜单仍可打开。
+        // 槽位解析遵循"配置优先 -> 默认布局 -> 剩余空位兜底"，保证 UI 文件写错时菜单仍可打开。
         append(configured)
         if (requiredCount == null || resolved.size < requiredCount) {
             append(fallback)
@@ -79,7 +79,8 @@ private object UiConfigSupport {
             addAll(0 until size)
         }
         // 控制按钮允许自动避让已占用槽位，减少错误配置导致的按钮重叠。
-        return candidates.first { it in 0 until size && it !in used }
+        // 使用 firstOrNull 避免全部候选位都被占满时抛出 NoSuchElementException。
+        return candidates.firstOrNull { it in 0 until size && it !in used } ?: fallback.coerceIn(0, size - 1)
     }
 
     fun readSlots(config: Configuration, path: String): List<Int> {
@@ -173,31 +174,58 @@ object HomeUiConfig {
     private val refreshDefault = UiItemTemplate(50, Material.COMPASS.name, "&a刷新界面")
     private val closeDefault = UiItemTemplate(53, Material.BARRIER.name, "&c关闭菜单")
 
-    val title: String
-        get() = config.getString("title", "&8玩家仓库") ?: "&8玩家仓库"
+    private data class CachedLayout(
+        val title: String,
+        val rows: Int,
+        val helpButton: UiItemTemplate,
+        val profileButton: UiItemTemplate,
+        val refreshButton: UiItemTemplate,
+        val closeButton: UiItemTemplate,
+        val controlSlots: List<Int>,
+        val pageSlots: List<Int>,
+        val filler: UiItemTemplate,
+        val pageItem: UiItemTemplate,
+        val lockedPageItem: UiItemTemplate,
+    )
 
-    val pageSlots: List<Int>
-        get() {
-            val rows = rows
-            val size = rows * 9
-            return UiConfigSupport.resolveSlotList(
-                configured = UiConfigSupport.readSlots(config, "page-slots"),
-                fallback = UiConfigSupport.defaultHomePageSlots(),
-                size = size,
-                reserved = controlSlots.toSet(),
-                requiredCount = PluginConfig.maxPages,
-            )
-        }
+    @Volatile
+    private var cached: CachedLayout? = null
 
-    val filler: UiItemTemplate
-        get() = UiConfigSupport.readItem(
+    private fun computeLayout(): CachedLayout {
+        val title = config.getString("title", "&8玩家仓库") ?: "&8玩家仓库"
+
+        val rows = UiConfigSupport.resolveRows(
+            requested = config.getInt("rows", 6),
+            relevantSlots = UiConfigSupport.readSlots(config, "page-slots") + listOf(
+                UiConfigSupport.readRawSlot(config, "items.help", helpDefault.slot!!),
+                UiConfigSupport.readRawSlot(config, "items.profile", profileDefault.slot!!),
+                UiConfigSupport.readRawSlot(config, "items.refresh", refreshDefault.slot!!),
+                UiConfigSupport.readRawSlot(config, "items.close", closeDefault.slot!!),
+            ),
+        )
+        val size = rows * 9
+
+        val helpButton = readControlItem("items.help", helpDefault, setOf(), size)
+        val profileButton = readControlItem("items.profile", profileDefault, setOf(helpButton.slot!!), size)
+        val refreshButton = readControlItem("items.refresh", refreshDefault, setOf(helpButton.slot!!, profileButton.slot!!), size)
+        val closeButton = readControlItem("items.close", closeDefault, setOf(helpButton.slot!!, profileButton.slot!!, refreshButton.slot!!), size)
+        val controlSlots = listOf(helpButton.slot!!, profileButton.slot!!, refreshButton.slot!!, closeButton.slot!!)
+
+        val pageSlots = UiConfigSupport.resolveSlotList(
+            configured = UiConfigSupport.readSlots(config, "page-slots"),
+            fallback = UiConfigSupport.defaultHomePageSlots(),
+            size = size,
+            reserved = controlSlots.toSet(),
+            requiredCount = PluginConfig.maxPages,
+        )
+
+        val filler = UiConfigSupport.readItem(
             config,
             "items.filler",
             UiItemTemplate(material = Material.STAINED_GLASS_PANE.name, name = " ", durability = 7),
         )
 
-    val pageItem: UiItemTemplate
-        get() = UiConfigSupport.readItem(
+        val pageItem = UiConfigSupport.readItem(
             config,
             "items.page",
             UiItemTemplate(
@@ -213,8 +241,7 @@ object HomeUiConfig {
             ),
         )
 
-    val lockedPageItem: UiItemTemplate
-        get() = UiConfigSupport.readItem(
+        val lockedPageItem = UiConfigSupport.readItem(
             config,
             "items.locked-page",
             UiItemTemplate(
@@ -227,43 +254,70 @@ object HomeUiConfig {
             ),
         )
 
-    val helpButton: UiItemTemplate
-        get() = readControlItem("items.help", helpDefault, setOf())
+        return CachedLayout(
+            title = title,
+            rows = rows,
+            helpButton = helpButton,
+            profileButton = profileButton,
+            refreshButton = refreshButton,
+            closeButton = closeButton,
+            controlSlots = controlSlots,
+            pageSlots = pageSlots,
+            filler = filler,
+            pageItem = pageItem,
+            lockedPageItem = lockedPageItem,
+        )
+    }
 
-    val profileButton: UiItemTemplate
-        get() = readControlItem("items.profile", profileDefault, setOf(helpButton.slot!!))
+    private fun layout(): CachedLayout {
+        return cached ?: computeLayout().also { cached = it }
+    }
 
-    val refreshButton: UiItemTemplate
-        get() = readControlItem("items.refresh", refreshDefault, setOf(helpButton.slot!!, profileButton.slot!!))
-
-    val closeButton: UiItemTemplate
-        get() = readControlItem("items.close", closeDefault, setOf(helpButton.slot!!, profileButton.slot!!, refreshButton.slot!!))
-
-    val controlSlots: List<Int>
-        get() = listOf(helpButton.slot!!, profileButton.slot!!, refreshButton.slot!!, closeButton.slot!!)
+    val title: String
+        get() = layout().title
 
     val rows: Int
-        get() = UiConfigSupport.resolveRows(
-            requested = config.getInt("rows", 6),
-            relevantSlots = UiConfigSupport.readSlots(config, "page-slots") + listOf(
-                UiConfigSupport.readRawSlot(config, "items.help", helpDefault.slot!!),
-                UiConfigSupport.readRawSlot(config, "items.profile", profileDefault.slot!!),
-                UiConfigSupport.readRawSlot(config, "items.refresh", refreshDefault.slot!!),
-                UiConfigSupport.readRawSlot(config, "items.close", closeDefault.slot!!),
-            ),
-        )
+        get() = layout().rows
+
+    val helpButton: UiItemTemplate
+        get() = layout().helpButton
+
+    val profileButton: UiItemTemplate
+        get() = layout().profileButton
+
+    val refreshButton: UiItemTemplate
+        get() = layout().refreshButton
+
+    val closeButton: UiItemTemplate
+        get() = layout().closeButton
+
+    val controlSlots: List<Int>
+        get() = layout().controlSlots
+
+    val pageSlots: List<Int>
+        get() = layout().pageSlots
+
+    val filler: UiItemTemplate
+        get() = layout().filler
+
+    val pageItem: UiItemTemplate
+        get() = layout().pageItem
+
+    val lockedPageItem: UiItemTemplate
+        get() = layout().lockedPageItem
 
     fun reload() {
         config.reload()
+        cached = null
     }
 
     fun formatTitle(placeholders: Map<String, Any?> = emptyMap()): String {
         return UiConfigSupport.formatText(title, placeholders)
     }
 
-    private fun readControlItem(path: String, fallback: UiItemTemplate, used: Set<Int>): UiItemTemplate {
+    private fun readControlItem(path: String, fallback: UiItemTemplate, used: Set<Int>, size: Int): UiItemTemplate {
         val raw = UiConfigSupport.readItem(config, path, fallback)
-        val slot = UiConfigSupport.resolveButtonSlot(raw.slot, fallback.slot!!, rows * 9, used)
+        val slot = UiConfigSupport.resolveButtonSlot(raw.slot, fallback.slot!!, size, used)
         return raw.copy(slot = slot)
     }
 }
@@ -278,31 +332,55 @@ object InspectHomeUiConfig {
     private val readonlyDefault = UiItemTemplate(49, Material.BOOK.name, "&b只读模式")
     private val closeDefault = UiItemTemplate(53, Material.BARRIER.name, "&c关闭菜单")
 
-    val title: String
-        get() = config.getString("title", "&8查看仓库 - {player}") ?: "&8查看仓库 - {player}"
+    private data class CachedLayout(
+        val title: String,
+        val rows: Int,
+        val profileButton: UiItemTemplate,
+        val readonlyButton: UiItemTemplate,
+        val closeButton: UiItemTemplate,
+        val controlSlots: List<Int>,
+        val pageSlots: List<Int>,
+        val filler: UiItemTemplate,
+        val pageItem: UiItemTemplate,
+        val lockedPageItem: UiItemTemplate,
+    )
 
-    val pageSlots: List<Int>
-        get() {
-            val rows = rows
-            val size = rows * 9
-            return UiConfigSupport.resolveSlotList(
-                configured = UiConfigSupport.readSlots(config, "page-slots"),
-                fallback = UiConfigSupport.defaultHomePageSlots(),
-                size = size,
-                reserved = controlSlots.toSet(),
-                requiredCount = PluginConfig.maxPages,
-            )
-        }
+    @Volatile
+    private var cached: CachedLayout? = null
 
-    val filler: UiItemTemplate
-        get() = UiConfigSupport.readItem(
+    private fun computeLayout(): CachedLayout {
+        val title = config.getString("title", "&8查看仓库 - {player}") ?: "&8查看仓库 - {player}"
+
+        val rows = UiConfigSupport.resolveRows(
+            requested = config.getInt("rows", 6),
+            relevantSlots = UiConfigSupport.readSlots(config, "page-slots") + listOf(
+                UiConfigSupport.readRawSlot(config, "items.profile", profileDefault.slot!!),
+                UiConfigSupport.readRawSlot(config, "items.readonly", readonlyDefault.slot!!),
+                UiConfigSupport.readRawSlot(config, "items.close", closeDefault.slot!!),
+            ),
+        )
+        val size = rows * 9
+
+        val profileButton = readControlItem("items.profile", profileDefault, setOf(), size)
+        val readonlyButton = readControlItem("items.readonly", readonlyDefault, setOf(profileButton.slot!!), size)
+        val closeButton = readControlItem("items.close", closeDefault, setOf(profileButton.slot!!, readonlyButton.slot!!), size)
+        val controlSlots = listOf(profileButton.slot!!, readonlyButton.slot!!, closeButton.slot!!)
+
+        val pageSlots = UiConfigSupport.resolveSlotList(
+            configured = UiConfigSupport.readSlots(config, "page-slots"),
+            fallback = UiConfigSupport.defaultHomePageSlots(),
+            size = size,
+            reserved = controlSlots.toSet(),
+            requiredCount = PluginConfig.maxPages,
+        )
+
+        val filler = UiConfigSupport.readItem(
             config,
             "items.filler",
             UiItemTemplate(material = Material.STAINED_GLASS_PANE.name, name = " ", durability = 7),
         )
 
-    val pageItem: UiItemTemplate
-        get() = UiConfigSupport.readItem(
+        val pageItem = UiConfigSupport.readItem(
             config,
             "items.page",
             UiItemTemplate(
@@ -317,8 +395,7 @@ object InspectHomeUiConfig {
             ),
         )
 
-    val lockedPageItem: UiItemTemplate
-        get() = UiConfigSupport.readItem(
+        val lockedPageItem = UiConfigSupport.readItem(
             config,
             "items.locked-page",
             UiItemTemplate(
@@ -331,39 +408,66 @@ object InspectHomeUiConfig {
             ),
         )
 
-    val profileButton: UiItemTemplate
-        get() = readControlItem("items.profile", profileDefault, setOf())
+        return CachedLayout(
+            title = title,
+            rows = rows,
+            profileButton = profileButton,
+            readonlyButton = readonlyButton,
+            closeButton = closeButton,
+            controlSlots = controlSlots,
+            pageSlots = pageSlots,
+            filler = filler,
+            pageItem = pageItem,
+            lockedPageItem = lockedPageItem,
+        )
+    }
 
-    val readonlyButton: UiItemTemplate
-        get() = readControlItem("items.readonly", readonlyDefault, setOf(profileButton.slot!!))
+    private fun layout(): CachedLayout {
+        return cached ?: computeLayout().also { cached = it }
+    }
 
-    val closeButton: UiItemTemplate
-        get() = readControlItem("items.close", closeDefault, setOf(profileButton.slot!!, readonlyButton.slot!!))
-
-    val controlSlots: List<Int>
-        get() = listOf(profileButton.slot!!, readonlyButton.slot!!, closeButton.slot!!)
+    val title: String
+        get() = layout().title
 
     val rows: Int
-        get() = UiConfigSupport.resolveRows(
-            requested = config.getInt("rows", 6),
-            relevantSlots = UiConfigSupport.readSlots(config, "page-slots") + listOf(
-                UiConfigSupport.readRawSlot(config, "items.profile", profileDefault.slot!!),
-                UiConfigSupport.readRawSlot(config, "items.readonly", readonlyDefault.slot!!),
-                UiConfigSupport.readRawSlot(config, "items.close", closeDefault.slot!!),
-            ),
-        )
+        get() = layout().rows
+
+    val profileButton: UiItemTemplate
+        get() = layout().profileButton
+
+    val readonlyButton: UiItemTemplate
+        get() = layout().readonlyButton
+
+    val closeButton: UiItemTemplate
+        get() = layout().closeButton
+
+    val controlSlots: List<Int>
+        get() = layout().controlSlots
+
+    val pageSlots: List<Int>
+        get() = layout().pageSlots
+
+    val filler: UiItemTemplate
+        get() = layout().filler
+
+    val pageItem: UiItemTemplate
+        get() = layout().pageItem
+
+    val lockedPageItem: UiItemTemplate
+        get() = layout().lockedPageItem
 
     fun reload() {
         config.reload()
+        cached = null
     }
 
     fun formatTitle(placeholders: Map<String, Any?> = emptyMap()): String {
         return UiConfigSupport.formatText(title, placeholders)
     }
 
-    private fun readControlItem(path: String, fallback: UiItemTemplate, used: Set<Int>): UiItemTemplate {
+    private fun readControlItem(path: String, fallback: UiItemTemplate, used: Set<Int>, size: Int): UiItemTemplate {
         val raw = UiConfigSupport.readItem(config, path, fallback)
-        val slot = UiConfigSupport.resolveButtonSlot(raw.slot, fallback.slot!!, rows * 9, used)
+        val slot = UiConfigSupport.resolveButtonSlot(raw.slot, fallback.slot!!, size, used)
         return raw.copy(slot = slot)
     }
 }
@@ -380,56 +484,31 @@ object PageUiConfig {
     private val closeDefault = UiItemTemplate(50, Material.BARRIER.name, "&c关闭菜单")
     private val nextDefault = UiItemTemplate(53, Material.ARROW.name, "&e下一页")
 
-    val title: String
-        get() = config.getString("title", "&8我的仓库 - 第 {page} 页") ?: "&8我的仓库 - 第 {page} 页"
+    private data class CachedLayout(
+        val title: String,
+        val rows: Int,
+        val previousButton: UiItemTemplate,
+        val currentButton: UiItemTemplate,
+        val backButton: UiItemTemplate,
+        val closeButton: UiItemTemplate,
+        val nextButton: UiItemTemplate,
+        val controlSlots: List<Int>,
+        val storageSlots: List<Int>,
+        val storageCapacity: Int,
+        val activeStorageSlots: List<Int>,
+        val inactiveStorageSlots: List<Int>,
+        val backgroundSlots: List<Int>,
+        val background: UiItemTemplate,
+        val disabledStorage: UiItemTemplate,
+    )
 
-    val background: UiItemTemplate
-        get() = UiConfigSupport.readItem(
-            config,
-            "items.background",
-            UiItemTemplate(material = Material.STAINED_GLASS_PANE.name, name = " ", durability = 7),
-        )
+    @Volatile
+    private var cached: CachedLayout? = null
 
-    val disabledStorage: UiItemTemplate
-        get() = UiConfigSupport.readItem(
-            config,
-            "items.disabled-storage",
-            UiItemTemplate(
-                material = Material.STAINED_GLASS_PANE.name,
-                name = "&8不可用槽位",
-                lore = listOf("&7当前配置未开放这个槽位"),
-                durability = 8,
-            ),
-        )
+    private fun computeLayout(): CachedLayout {
+        val title = config.getString("title", "&8我的仓库 - 第 {page} 页") ?: "&8我的仓库 - 第 {page} 页"
 
-    val previousButton: UiItemTemplate
-        get() = readControlItem("items.previous", previousDefault, setOf())
-
-    val currentButton: UiItemTemplate
-        get() = readControlItem("items.current", currentDefault, setOf(previousButton.slot!!))
-
-    val backButton: UiItemTemplate
-        get() = readControlItem("items.back", backDefault, setOf(previousButton.slot!!, currentButton.slot!!))
-
-    val closeButton: UiItemTemplate
-        get() = readControlItem(
-            "items.close",
-            closeDefault,
-            setOf(previousButton.slot!!, currentButton.slot!!, backButton.slot!!),
-        )
-
-    val nextButton: UiItemTemplate
-        get() = readControlItem(
-            "items.next",
-            nextDefault,
-            setOf(previousButton.slot!!, currentButton.slot!!, backButton.slot!!, closeButton.slot!!),
-        )
-
-    val controlSlots: List<Int>
-        get() = listOf(previousButton.slot!!, currentButton.slot!!, backButton.slot!!, closeButton.slot!!, nextButton.slot!!)
-
-    val rows: Int
-        get() = UiConfigSupport.resolveRows(
+        val rows = UiConfigSupport.resolveRows(
             requested = config.getInt("rows", 6),
             relevantSlots = UiConfigSupport.readSlots(config, "storage-slots") + listOf(
                 UiConfigSupport.readRawSlot(config, "items.previous", previousDefault.slot!!),
@@ -440,51 +519,143 @@ object PageUiConfig {
             ),
             minimumRows = 2,
         )
+        val size = rows * 9
+
+        val previousButton = readControlItem("items.previous", previousDefault, setOf(), size)
+        val currentButton = readControlItem("items.current", currentDefault, setOf(previousButton.slot!!), size)
+        val backButton = readControlItem("items.back", backDefault, setOf(previousButton.slot!!, currentButton.slot!!), size)
+        val closeButton = readControlItem(
+            "items.close",
+            closeDefault,
+            setOf(previousButton.slot!!, currentButton.slot!!, backButton.slot!!),
+            size,
+        )
+        val nextButton = readControlItem(
+            "items.next",
+            nextDefault,
+            setOf(previousButton.slot!!, currentButton.slot!!, backButton.slot!!, closeButton.slot!!),
+            size,
+        )
+        val controlSlots = listOf(previousButton.slot!!, currentButton.slot!!, backButton.slot!!, closeButton.slot!!, nextButton.slot!!)
+
+        val configured = UiConfigSupport.readSlots(config, "storage-slots")
+        val requiredCount = maxOf(
+            configured.size.coerceAtMost(45),
+            minOf(PluginConfig.pageSize, (0 until size).count { it !in controlSlots.toSet() }),
+        )
+        // storage-slots 既定义展示顺序，也定义逻辑槽位顺序，仓库页数据按这个顺序映射到 UI。
+        val storageSlots = UiConfigSupport.resolveSlotList(
+            configured = configured,
+            fallback = UiConfigSupport.defaultStorageSlots(),
+            size = size,
+            reserved = controlSlots.toSet(),
+            requiredCount = requiredCount,
+        )
+
+        val storageCapacity = minOf(PluginConfig.pageSize, storageSlots.size)
+        val activeStorageSlots = storageSlots.take(storageCapacity)
+        val inactiveStorageSlots = storageSlots.drop(storageCapacity)
+
+        val used = (storageSlots + controlSlots).toSet()
+        val backgroundSlots = (0 until size).filter { it !in used }
+
+        val background = UiConfigSupport.readItem(
+            config,
+            "items.background",
+            UiItemTemplate(material = Material.STAINED_GLASS_PANE.name, name = " ", durability = 7),
+        )
+
+        val disabledStorage = UiConfigSupport.readItem(
+            config,
+            "items.disabled-storage",
+            UiItemTemplate(
+                material = Material.STAINED_GLASS_PANE.name,
+                name = "&8不可用槽位",
+                lore = listOf("&7当前配置未开放这个槽位"),
+                durability = 8,
+            ),
+        )
+
+        return CachedLayout(
+            title = title,
+            rows = rows,
+            previousButton = previousButton,
+            currentButton = currentButton,
+            backButton = backButton,
+            closeButton = closeButton,
+            nextButton = nextButton,
+            controlSlots = controlSlots,
+            storageSlots = storageSlots,
+            storageCapacity = storageCapacity,
+            activeStorageSlots = activeStorageSlots,
+            inactiveStorageSlots = inactiveStorageSlots,
+            backgroundSlots = backgroundSlots,
+            background = background,
+            disabledStorage = disabledStorage,
+        )
+    }
+
+    private fun layout(): CachedLayout {
+        return cached ?: computeLayout().also { cached = it }
+    }
+
+    val title: String
+        get() = layout().title
+
+    val rows: Int
+        get() = layout().rows
+
+    val previousButton: UiItemTemplate
+        get() = layout().previousButton
+
+    val currentButton: UiItemTemplate
+        get() = layout().currentButton
+
+    val backButton: UiItemTemplate
+        get() = layout().backButton
+
+    val closeButton: UiItemTemplate
+        get() = layout().closeButton
+
+    val nextButton: UiItemTemplate
+        get() = layout().nextButton
+
+    val controlSlots: List<Int>
+        get() = layout().controlSlots
 
     val storageSlots: List<Int>
-        get() {
-            val size = rows * 9
-            val configured = UiConfigSupport.readSlots(config, "storage-slots")
-            val requiredCount = maxOf(
-                configured.size.coerceAtMost(45),
-                minOf(PluginConfig.pageSize, (0 until size).count { it !in controlSlots.toSet() }),
-            )
-            // storage-slots 既定义展示顺序，也定义逻辑槽位顺序，仓库页数据按这个顺序映射到 UI。
-            return UiConfigSupport.resolveSlotList(
-                configured = configured,
-                fallback = UiConfigSupport.defaultStorageSlots(),
-                size = size,
-                reserved = controlSlots.toSet(),
-                requiredCount = requiredCount,
-            )
-        }
+        get() = layout().storageSlots
 
     val storageCapacity: Int
-        get() = minOf(PluginConfig.pageSize, storageSlots.size)
+        get() = layout().storageCapacity
 
     val activeStorageSlots: List<Int>
-        get() = storageSlots.take(storageCapacity)
+        get() = layout().activeStorageSlots
 
     val inactiveStorageSlots: List<Int>
-        get() = storageSlots.drop(storageCapacity)
+        get() = layout().inactiveStorageSlots
 
     val backgroundSlots: List<Int>
-        get() {
-            val used = (storageSlots + controlSlots).toSet()
-            return (0 until rows * 9).filter { it !in used }
-        }
+        get() = layout().backgroundSlots
+
+    val background: UiItemTemplate
+        get() = layout().background
+
+    val disabledStorage: UiItemTemplate
+        get() = layout().disabledStorage
 
     fun reload() {
         config.reload()
+        cached = null
     }
 
     fun formatTitle(placeholders: Map<String, Any?> = emptyMap()): String {
         return UiConfigSupport.formatText(title, placeholders)
     }
 
-    private fun readControlItem(path: String, fallback: UiItemTemplate, used: Set<Int>): UiItemTemplate {
+    private fun readControlItem(path: String, fallback: UiItemTemplate, used: Set<Int>, size: Int): UiItemTemplate {
         val raw = UiConfigSupport.readItem(config, path, fallback)
-        val slot = UiConfigSupport.resolveButtonSlot(raw.slot, fallback.slot!!, rows * 9, used)
+        val slot = UiConfigSupport.resolveButtonSlot(raw.slot, fallback.slot!!, size, used)
         return raw.copy(slot = slot)
     }
 }
@@ -501,56 +672,31 @@ object InspectPageUiConfig {
     private val closeDefault = UiItemTemplate(50, Material.BARRIER.name, "&c关闭菜单")
     private val nextDefault = UiItemTemplate(53, Material.ARROW.name, "&e下一页")
 
-    val title: String
-        get() = config.getString("title", "&8查看仓库 - {player} - 第 {page} 页") ?: "&8查看仓库 - {player} - 第 {page} 页"
+    private data class CachedLayout(
+        val title: String,
+        val rows: Int,
+        val previousButton: UiItemTemplate,
+        val readonlyButton: UiItemTemplate,
+        val backButton: UiItemTemplate,
+        val closeButton: UiItemTemplate,
+        val nextButton: UiItemTemplate,
+        val controlSlots: List<Int>,
+        val storageSlots: List<Int>,
+        val displayCapacity: Int,
+        val activeStorageSlots: List<Int>,
+        val inactiveStorageSlots: List<Int>,
+        val backgroundSlots: List<Int>,
+        val background: UiItemTemplate,
+        val disabledStorage: UiItemTemplate,
+    )
 
-    val background: UiItemTemplate
-        get() = UiConfigSupport.readItem(
-            config,
-            "items.background",
-            UiItemTemplate(material = Material.STAINED_GLASS_PANE.name, name = " ", durability = 7),
-        )
+    @Volatile
+    private var cached: CachedLayout? = null
 
-    val disabledStorage: UiItemTemplate
-        get() = UiConfigSupport.readItem(
-            config,
-            "items.disabled-storage",
-            UiItemTemplate(
-                material = Material.STAINED_GLASS_PANE.name,
-                name = "&8不可用槽位",
-                lore = listOf("&7当前布局未显示这个槽位"),
-                durability = 8,
-            ),
-        )
+    private fun computeLayout(): CachedLayout {
+        val title = config.getString("title", "&8查看仓库 - {player} - 第 {page} 页") ?: "&8查看仓库 - {player} - 第 {page} 页"
 
-    val previousButton: UiItemTemplate
-        get() = readControlItem("items.previous", previousDefault, setOf())
-
-    val readonlyButton: UiItemTemplate
-        get() = readControlItem("items.readonly", readonlyDefault, setOf(previousButton.slot!!))
-
-    val backButton: UiItemTemplate
-        get() = readControlItem("items.back", backDefault, setOf(previousButton.slot!!, readonlyButton.slot!!))
-
-    val closeButton: UiItemTemplate
-        get() = readControlItem(
-            "items.close",
-            closeDefault,
-            setOf(previousButton.slot!!, readonlyButton.slot!!, backButton.slot!!),
-        )
-
-    val nextButton: UiItemTemplate
-        get() = readControlItem(
-            "items.next",
-            nextDefault,
-            setOf(previousButton.slot!!, readonlyButton.slot!!, backButton.slot!!, closeButton.slot!!),
-        )
-
-    val controlSlots: List<Int>
-        get() = listOf(previousButton.slot!!, readonlyButton.slot!!, backButton.slot!!, closeButton.slot!!, nextButton.slot!!)
-
-    val rows: Int
-        get() = UiConfigSupport.resolveRows(
+        val rows = UiConfigSupport.resolveRows(
             requested = config.getInt("rows", 6),
             relevantSlots = UiConfigSupport.readSlots(config, "storage-slots") + listOf(
                 UiConfigSupport.readRawSlot(config, "items.previous", previousDefault.slot!!),
@@ -561,51 +707,143 @@ object InspectPageUiConfig {
             ),
             minimumRows = 2,
         )
+        val size = rows * 9
+
+        val previousButton = readControlItem("items.previous", previousDefault, setOf(), size)
+        val readonlyButton = readControlItem("items.readonly", readonlyDefault, setOf(previousButton.slot!!), size)
+        val backButton = readControlItem("items.back", backDefault, setOf(previousButton.slot!!, readonlyButton.slot!!), size)
+        val closeButton = readControlItem(
+            "items.close",
+            closeDefault,
+            setOf(previousButton.slot!!, readonlyButton.slot!!, backButton.slot!!),
+            size,
+        )
+        val nextButton = readControlItem(
+            "items.next",
+            nextDefault,
+            setOf(previousButton.slot!!, readonlyButton.slot!!, backButton.slot!!, closeButton.slot!!),
+            size,
+        )
+        val controlSlots = listOf(previousButton.slot!!, readonlyButton.slot!!, backButton.slot!!, closeButton.slot!!, nextButton.slot!!)
+
+        val configured = UiConfigSupport.readSlots(config, "storage-slots")
+        val requiredCount = maxOf(
+            configured.size.coerceAtMost(45),
+            minOf(PageUiConfig.storageCapacity, (0 until size).count { it !in controlSlots.toSet() }),
+        )
+        // 查看页跟随玩家页容量，避免管理员看到"逻辑上不存在"的隐藏槽位。
+        val storageSlots = UiConfigSupport.resolveSlotList(
+            configured = configured,
+            fallback = UiConfigSupport.defaultStorageSlots(),
+            size = size,
+            reserved = controlSlots.toSet(),
+            requiredCount = requiredCount,
+        )
+
+        val displayCapacity = minOf(PageUiConfig.storageCapacity, storageSlots.size)
+        val activeStorageSlots = storageSlots.take(displayCapacity)
+        val inactiveStorageSlots = storageSlots.drop(displayCapacity)
+
+        val used = (storageSlots + controlSlots).toSet()
+        val backgroundSlots = (0 until size).filter { it !in used }
+
+        val background = UiConfigSupport.readItem(
+            config,
+            "items.background",
+            UiItemTemplate(material = Material.STAINED_GLASS_PANE.name, name = " ", durability = 7),
+        )
+
+        val disabledStorage = UiConfigSupport.readItem(
+            config,
+            "items.disabled-storage",
+            UiItemTemplate(
+                material = Material.STAINED_GLASS_PANE.name,
+                name = "&8不可用槽位",
+                lore = listOf("&7当前布局未显示这个槽位"),
+                durability = 8,
+            ),
+        )
+
+        return CachedLayout(
+            title = title,
+            rows = rows,
+            previousButton = previousButton,
+            readonlyButton = readonlyButton,
+            backButton = backButton,
+            closeButton = closeButton,
+            nextButton = nextButton,
+            controlSlots = controlSlots,
+            storageSlots = storageSlots,
+            displayCapacity = displayCapacity,
+            activeStorageSlots = activeStorageSlots,
+            inactiveStorageSlots = inactiveStorageSlots,
+            backgroundSlots = backgroundSlots,
+            background = background,
+            disabledStorage = disabledStorage,
+        )
+    }
+
+    private fun layout(): CachedLayout {
+        return cached ?: computeLayout().also { cached = it }
+    }
+
+    val title: String
+        get() = layout().title
+
+    val rows: Int
+        get() = layout().rows
+
+    val previousButton: UiItemTemplate
+        get() = layout().previousButton
+
+    val readonlyButton: UiItemTemplate
+        get() = layout().readonlyButton
+
+    val backButton: UiItemTemplate
+        get() = layout().backButton
+
+    val closeButton: UiItemTemplate
+        get() = layout().closeButton
+
+    val nextButton: UiItemTemplate
+        get() = layout().nextButton
+
+    val controlSlots: List<Int>
+        get() = layout().controlSlots
 
     val storageSlots: List<Int>
-        get() {
-            val size = rows * 9
-            val configured = UiConfigSupport.readSlots(config, "storage-slots")
-            val requiredCount = maxOf(
-                configured.size.coerceAtMost(45),
-                minOf(PageUiConfig.storageCapacity, (0 until size).count { it !in controlSlots.toSet() }),
-            )
-            // 查看页跟随玩家页容量，避免管理员看到“逻辑上不存在”的隐藏槽位。
-            return UiConfigSupport.resolveSlotList(
-                configured = configured,
-                fallback = UiConfigSupport.defaultStorageSlots(),
-                size = size,
-                reserved = controlSlots.toSet(),
-                requiredCount = requiredCount,
-            )
-        }
+        get() = layout().storageSlots
 
     val displayCapacity: Int
-        get() = minOf(PageUiConfig.storageCapacity, storageSlots.size)
+        get() = layout().displayCapacity
 
     val activeStorageSlots: List<Int>
-        get() = storageSlots.take(displayCapacity)
+        get() = layout().activeStorageSlots
 
     val inactiveStorageSlots: List<Int>
-        get() = storageSlots.drop(displayCapacity)
+        get() = layout().inactiveStorageSlots
 
     val backgroundSlots: List<Int>
-        get() {
-            val used = (storageSlots + controlSlots).toSet()
-            return (0 until rows * 9).filter { it !in used }
-        }
+        get() = layout().backgroundSlots
+
+    val background: UiItemTemplate
+        get() = layout().background
+
+    val disabledStorage: UiItemTemplate
+        get() = layout().disabledStorage
 
     fun reload() {
         config.reload()
+        cached = null
     }
 
     fun formatTitle(placeholders: Map<String, Any?> = emptyMap()): String {
         return UiConfigSupport.formatText(title, placeholders)
     }
 
-    private fun readControlItem(path: String, fallback: UiItemTemplate, used: Set<Int>): UiItemTemplate {
+    private fun readControlItem(path: String, fallback: UiItemTemplate, used: Set<Int>, size: Int): UiItemTemplate {
         val raw = UiConfigSupport.readItem(config, path, fallback)
-        val slot = UiConfigSupport.resolveButtonSlot(raw.slot, fallback.slot!!, rows * 9, used)
+        val slot = UiConfigSupport.resolveButtonSlot(raw.slot, fallback.slot!!, size, used)
         return raw.copy(slot = slot)
     }
 }

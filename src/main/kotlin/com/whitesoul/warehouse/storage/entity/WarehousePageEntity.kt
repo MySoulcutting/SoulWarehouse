@@ -52,7 +52,8 @@ class WarehousePageEntity {
                 uuid = pageData.owner
                 page = pageData.page
                 usedSlots = pageData.countUsedSlots(WarehousePageData.SLOT_COUNT)
-                content = WarehouseSerializer.serialize(pageData.contents)
+                // 通过 serializeContents() 在持有 lock 的情况下序列化，避免异步保存时与主线程并发读写 contents。
+                content = pageData.serializeContents()
                 updatedAt = pageData.updatedAt
             }
         }

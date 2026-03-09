@@ -392,37 +392,41 @@ object WarehouseService {
         val limit = size.coerceIn(0, WarehousePageData.SLOT_COUNT)
         var remaining = amount
         var changed = false
-        for (slot in 0 until limit) {
-            val current = pageData.contents[slot]
-            if (mergeOnly) {
-                if (current == null || !current.isSimilar(template) || current.amount >= current.maxStackSize) {
-                    continue
+        synchronized(pageData.lock) {
+            for (slot in 0 until limit) {
+                val current = pageData.contents[slot]
+                if (mergeOnly) {
+                    if (current == null || !current.isSimilar(template) || current.amount >= current.maxStackSize) {
+                        continue
+                    }
+                    val moved = minOf(remaining, current.maxStackSize - current.amount)
+                    if (moved <= 0) {
+                        continue
+                    }
+                    current.amount += moved
+                    remaining -= moved
+                    changed = true
+                } else {
+                    if (current != null) {
+                        continue
+                    }
+                    val moved = minOf(remaining, template.maxStackSize)
+                    if (moved <= 0) {
+                        break
+                    }
+                    pageData.contents[slot] = template.clone().apply { this.amount = moved }
+                    remaining -= moved
+                    changed = true
                 }
-                val moved = minOf(remaining, current.maxStackSize - current.amount)
-                if (moved <= 0) {
-                    continue
-                }
-                current.amount += moved
-                remaining -= moved
-                changed = true
-            } else {
-                if (current != null) {
-                    continue
-                }
-                val moved = minOf(remaining, template.maxStackSize)
-                if (moved <= 0) {
+                if (remaining <= 0) {
                     break
                 }
-                pageData.contents[slot] = template.clone().apply { this.amount = moved }
-                remaining -= moved
-                changed = true
             }
-            if (remaining <= 0) {
-                break
+            if (changed) {
+                pageData.updatedAt = System.currentTimeMillis()
             }
         }
         if (changed) {
-            pageData.updatedAt = System.currentTimeMillis()
             markDirty(owner, page)
         }
         return remaining
@@ -431,4 +435,14 @@ object WarehouseService {
     private data class PageKey(val owner: UUID, val page: Int)
 
     private const val MAX_PAGE_REMARK_LENGTH = 32
+
+    /** 清理指定玩家的所有缓存条目，防止离线后内存泄漏。应在保存完数据后调用。 */
+    fun evictOwner(uuid: UUID) {
+        warehouseCache.keys.removeIf { it.owner == uuid }
+        profileCache.remove(uuid)
+        remarkCache.keys.removeIf { it.owner == uuid }
+        dirtyPages.removeIf { it.owner == uuid }
+        dirtyProfiles.remove(uuid)
+        dirtyRemarks.removeIf { it.owner == uuid }
+    }
 }

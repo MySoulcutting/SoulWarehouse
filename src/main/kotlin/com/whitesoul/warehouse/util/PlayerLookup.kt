@@ -7,14 +7,15 @@ object PlayerLookup {
 
     fun findOfflinePlayer(name: String): OfflinePlayer? {
         Bukkit.getPlayerExact(name)?.let { return it }
-        // 离线玩家匹配降级为忽略大小写，兼容管理员手输玩家名时的常见大小写误差。
-        return Bukkit.getOfflinePlayers().firstOrNull { it.name?.equals(name, ignoreCase = true) == true }
+        // 使用 getOfflinePlayer(name) 代替遍历全量离线玩家列表，避免大服务器上的性能问题。
+        // 注意：该方法在玩家从未加入过时仍会返回非 null 对象，需通过 hasPlayedBefore 过滤。
+        @Suppress("DEPRECATION")
+        val offline = Bukkit.getOfflinePlayer(name)
+        return if (offline.hasPlayedBefore()) offline else null
     }
 
     fun suggestNames(): List<String> {
-        return buildSet {
-            Bukkit.getOnlinePlayers().mapTo(this) { it.name }
-            Bukkit.getOfflinePlayers().mapNotNullTo(this) { it.name }
-        }.sorted()
+        // 仅补全在线玩家名，避免遍历全量离线玩家列表导致 Tab 补全卡顿。
+        return Bukkit.getOnlinePlayers().map { it.name }.sorted()
     }
 }

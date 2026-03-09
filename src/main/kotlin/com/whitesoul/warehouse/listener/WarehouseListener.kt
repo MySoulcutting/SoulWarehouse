@@ -68,5 +68,7 @@ object WarehouseListener {
         }
         WarehouseRemarkInputService.clear(player)
         WarehouseSessionService.end(player)
+        // 保存完毕后驱逐缓存，防止离线玩家数据长期驻留内存。
+        WarehouseService.evictOwner(player.uniqueId)
     }
 }
