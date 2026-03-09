@@ -1,6 +1,7 @@
 package com.whitesoul.warehouse.model
 
 import com.whitesoul.warehouse.util.cloneOrNull
+import com.whitesoul.warehouse.util.isSameStoredItem
 import com.whitesoul.warehouse.util.normalizeStoredItem
 import org.bukkit.inventory.ItemStack
 import java.util.UUID
@@ -34,7 +35,7 @@ data class WarehousePageData(
         // 只覆盖当前启用的逻辑槽位，未开放槽位保持原样，避免 UI 缩容时误删历史数据。
         repeat(size.coerceIn(0, SLOT_COUNT)) { slot ->
             val normalized = normalizeStoredItem(newContents.getOrNull(slot))
-            if (contents[slot] != normalized) {
+            if (!isSameStoredItem(contents[slot], normalized)) {
                 contents[slot] = normalized
                 changed = true
             }

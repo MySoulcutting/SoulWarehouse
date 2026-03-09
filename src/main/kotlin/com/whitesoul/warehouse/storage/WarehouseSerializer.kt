@@ -4,6 +4,7 @@ import com.whitesoul.warehouse.model.WarehousePageData
 import org.bukkit.inventory.ItemStack
 import org.bukkit.util.io.BukkitObjectInputStream
 import org.bukkit.util.io.BukkitObjectOutputStream
+import taboolib.common.platform.function.warning
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.util.zip.GZIPInputStream
@@ -46,6 +47,8 @@ object WarehouseSerializer {
                 }
             }
         }.getOrElse {
+            warning("Failed to deserialize warehouse page data (${content.size} bytes): ${it.message}")
+            it.printStackTrace()
             arrayOfNulls(WarehousePageData.SLOT_COUNT)
         }
     }

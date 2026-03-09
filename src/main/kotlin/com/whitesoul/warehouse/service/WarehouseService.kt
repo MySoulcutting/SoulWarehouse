@@ -228,7 +228,7 @@ object WarehouseService {
         if (!available) {
             return 0
         }
-        val uuids = if (force) dirtyProfiles.toList() else dirtyProfiles.toList()
+        val uuids = dirtyProfiles.toList()
         if (uuids.isEmpty()) {
             return 0
         }
@@ -242,7 +242,11 @@ object WarehouseService {
             profiles.size
         }.getOrElse {
             warning("Failed to batch save warehouse profiles - ${it.message}")
-            0
+            if (force) {
+                profiles.count { (uuid, _) -> saveProfile(uuid, true) }
+            } else {
+                0
+            }
         }
     }
 
