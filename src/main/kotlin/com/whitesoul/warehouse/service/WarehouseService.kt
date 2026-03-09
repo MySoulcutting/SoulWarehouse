@@ -421,6 +421,14 @@ object WarehouseService {
         if (typeName in PluginConfig.blacklist) {
             return false
         }
+        // 同时检查物品显示名称，去色后忽略大小写匹配
+        val displayName = itemStack.itemMeta?.displayName
+        if (displayName != null) {
+            val plain = ChatColor.stripColor(displayName).orEmpty().trim().uppercase()
+            if (plain.isNotEmpty() && plain in PluginConfig.blacklist) {
+                return false
+            }
+        }
         if (!PluginConfig.allowShulkerBox && typeName.endsWith("SHULKER_BOX")) {
             return false
         }

@@ -67,7 +67,10 @@ object PluginConfig {
         get() = config.getBoolean("warehouse.allow-shulker-box", true)
 
     val blacklist: Set<String>
-        get() = config.getStringList("warehouse.blacklist").map { it.uppercase() }.toSet()
+        get() = config.getStringList("warehouse.blacklist")
+            .map { ChatColor.stripColor(ChatColor.translateAlternateColorCodes('&', it)).orEmpty().trim().uppercase() }
+            .filter { it.isNotEmpty() }
+            .toSet()
 
     val autoSave: Boolean
         get() = config.getBoolean("save.auto-save", true)
