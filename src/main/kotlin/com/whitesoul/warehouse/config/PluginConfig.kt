@@ -53,7 +53,7 @@ object PluginConfig {
             }
 
     val maxPages: Int
-        get() = config.getInt("warehouse.max-pages", 5).coerceIn(1, 10)
+        get() = config.getInt("warehouse.max-pages", 5).coerceAtLeast(1)
 
     val defaultPages: Int
         get() = config.getInt("warehouse.default-pages", 3).coerceIn(1, maxPages)
