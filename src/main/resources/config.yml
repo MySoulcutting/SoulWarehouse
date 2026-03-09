@@ -4,7 +4,7 @@
 
 database:
   # 数据库类型：mysql / mariadb / postgresql / sqlite
-  type: mysql
+  type: sqlite
   # 远程数据库地址（mysql / mariadb / postgresql 使用）
   host: localhost
   port: 3306

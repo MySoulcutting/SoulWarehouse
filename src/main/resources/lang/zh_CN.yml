@@ -15,3 +15,4 @@ remark-input-begin:
 remark-input-saved: '&a已保存第 &f{0} &a页备注：&f{1}'
 remark-input-cleared: '&a已清空第 &f{0} &a页仓库备注。'
 remark-input-cancelled: '&e已取消仓库备注编辑。'
+auto-store-message: '&7已自动存入仓库：&f{0} &7x&f{1}'
