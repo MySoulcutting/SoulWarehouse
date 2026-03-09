@@ -66,7 +66,7 @@ database:
 
 warehouse:
   default-pages: 3     # 玩家默认页数
-  max-pages: 10        # 最大页数 (1-10)
+  max-pages: 10        # 最大页数（最少 1，无上限）
   page-size: 45        # 每页槽位数 (9-45)
   allow-shulker-box: true
   blacklist:
