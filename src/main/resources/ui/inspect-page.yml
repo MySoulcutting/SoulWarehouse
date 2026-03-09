@@ -1,0 +1,58 @@
+# 管理员查看别人仓库页
+# 可用占位符：{player} {target} {page} {max_pages} {page_size} {remark}
+
+title: "&8查看仓库 - {player} - 第 {page} 页"
+rows: 6
+storage-slots: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44]
+
+items:
+  background:
+    material: STAINED_GLASS_PANE
+    name: " "
+    durability: 7
+
+  disabled-storage:
+    material: STAINED_GLASS_PANE
+    name: "&8不可用槽位"
+    durability: 8
+    lore:
+      - "&7当前布局未显示这个槽位"
+
+  previous:
+    slot: 45
+    material: ARROW
+    name: "&e上一页"
+    lore:
+      - "&7前往第 &f{page} &7页"
+
+  readonly:
+    slot: 48
+    material: BOOK
+    name: "&b只读模式"
+    lore:
+      - "&7当前正在查看：&f{player}"
+      - "&7当前页码：&f{page}"
+      - "&7总可查看页数：&f{max_pages}"
+      - "&7备注：&f{remark}"
+      - "&c管理员查看模式不可修改物品"
+
+  back:
+    slot: 49
+    material: CHEST
+    name: "&e返回主页"
+    lore:
+      - "&7返回仓库页选择界面"
+
+  close:
+    slot: 50
+    material: BARRIER
+    name: "&c关闭菜单"
+    lore:
+      - "&7关闭当前仓库界面"
+
+  next:
+    slot: 53
+    material: ARROW
+    name: "&e下一页"
+    lore:
+      - "&7前往第 &f{page} &7页"

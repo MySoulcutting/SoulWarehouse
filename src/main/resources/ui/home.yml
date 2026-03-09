@@ -1,0 +1,61 @@
+# 玩家自己的仓库主页
+# 可用占位符：{page} {used} {page_size} {max_pages} {remark}
+
+title: "&8玩家仓库"
+rows: 6
+page-slots: [11, 12, 13, 14, 15, 20, 21, 22, 23, 24]
+
+items:
+  filler:
+    material: STAINED_GLASS_PANE
+    name: " "
+    durability: 7
+
+  page:
+    material: CHEST
+    name: "&6仓库第 {page} 页"
+    lore:
+      - "&7状态：&a已解锁"
+      - "&7已使用：&f{used}&7/&f{page_size}"
+      - "&7备注：&f{remark}"
+      - "&e左键打开这一页仓库"
+      - "&e右键设置备注"
+
+  locked-page:
+    material: BARRIER
+    name: "&6仓库第 {page} 页"
+    lore:
+      - "&7状态：&c未解锁"
+      - "&7你还不能访问这一页"
+
+  help:
+    slot: 45
+    material: BOOK
+    name: "&e使用说明"
+    lore:
+      - "&7/warehouse &f打开主页"
+      - "&7/warehouse open <页码> &f直达自己的某一页"
+      - "&7/warehouse open <玩家> [页码] &f管理员只读查看"
+
+  profile:
+    slot: 49
+    material: PAPER
+    name: "&b仓库信息"
+    lore:
+      - "&7可用页数：&f{max_pages}"
+      - "&7每页槽位：&f{page_size}"
+      - "&7数据会按配置自动保存"
+
+  refresh:
+    slot: 50
+    material: COMPASS
+    name: "&a刷新界面"
+    lore:
+      - "&7重新加载当前菜单显示"
+
+  close:
+    slot: 53
+    material: BARRIER
+    name: "&c关闭菜单"
+    lore:
+      - "&7关闭当前仓库界面"

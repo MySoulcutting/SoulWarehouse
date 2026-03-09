@@ -1,0 +1,52 @@
+# 管理员查看别人仓库主页
+# 可用占位符：{player} {target} {page} {used} {page_size} {max_pages} {remark}
+
+title: "&8查看仓库 - {player}"
+rows: 6
+page-slots: [11, 12, 13, 14, 15, 20, 21, 22, 23, 24]
+
+items:
+  filler:
+    material: STAINED_GLASS_PANE
+    name: " "
+    durability: 7
+
+  page:
+    material: ENDER_CHEST
+    name: "&6仓库第 {page} 页"
+    lore:
+      - "&7状态：&b只读查看"
+      - "&7已使用：&f{used}&7/&f{page_size}"
+      - "&7备注：&f{remark}"
+      - "&e点击查看这一页内容"
+
+  locked-page:
+    material: BARRIER
+    name: "&6仓库第 {page} 页"
+    lore:
+      - "&7状态：&c未解锁"
+      - "&7这个页面当前不可查看"
+
+  profile:
+    slot: 45
+    material: PAPER
+    name: "&b仓库信息"
+    lore:
+      - "&7目标玩家：&f{player}"
+      - "&7可查看页数：&f{max_pages}"
+      - "&7每页槽位：&f{page_size}"
+
+  readonly:
+    slot: 49
+    material: BOOK
+    name: "&b只读模式"
+    lore:
+      - "&7当前正在查看：&f{player}"
+      - "&c管理员查看模式不可修改物品"
+
+  close:
+    slot: 53
+    material: BARRIER
+    name: "&c关闭菜单"
+    lore:
+      - "&7关闭当前仓库界面"
