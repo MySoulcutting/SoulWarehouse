@@ -18,8 +18,6 @@ object WarehouseSaveService {
         task = submitAsync(delay = interval, period = interval) {
             WarehouseService.saveDirtyPages()
             WarehouseService.saveDirtyProfiles()
-            WarehouseService.saveDirtyPageRemarks()
-            WarehouseService.saveDirtyPageCategories()
         }
     }
 

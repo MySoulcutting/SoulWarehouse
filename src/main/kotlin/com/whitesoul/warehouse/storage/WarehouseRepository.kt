@@ -20,21 +20,9 @@ interface WarehouseRepository {
 
     fun loadPageUsage(uuid: UUID, page: Int): Int?
 
-    fun loadPageRemark(uuid: UUID, page: Int): String?
-
     fun savePage(pageData: WarehousePageData)
 
     fun savePages(pageDataList: Collection<WarehousePageData>)
 
-    fun savePageRemark(uuid: UUID, page: Int, remark: String)
-
     fun deletePage(uuid: UUID, page: Int)
-
-    fun deletePageRemark(uuid: UUID, page: Int)
-
-    fun loadPageCategory(uuid: UUID, page: Int): String?
-
-    fun savePageCategory(uuid: UUID, page: Int, category: String)
-
-    fun deletePageCategory(uuid: UUID, page: Int)
 }

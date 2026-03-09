@@ -37,7 +37,7 @@ object WarehouseRemarkInputService {
                 if (remark.isBlank()) {
                     clearRemark(player, pending)
                 } else {
-                    WarehouseService.savePageRemark(pending.owner, pending.page, force = true)
+                    WarehouseService.savePage(pending.owner, pending.page, force = true)
                     player.sendLang("remark-input-saved", pending.page, remark)
                 }
             }
@@ -60,7 +60,7 @@ object WarehouseRemarkInputService {
 
     private fun clearRemark(player: Player, pending: PendingRemarkInput) {
         WarehouseService.updatePageRemark(pending.owner, pending.page, "")
-        WarehouseService.savePageRemark(pending.owner, pending.page, force = true)
+        WarehouseService.savePage(pending.owner, pending.page, force = true)
         player.sendLang("remark-input-cleared", pending.page)
     }
 

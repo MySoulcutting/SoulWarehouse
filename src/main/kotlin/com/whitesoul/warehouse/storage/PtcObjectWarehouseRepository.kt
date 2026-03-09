@@ -3,9 +3,7 @@ package com.whitesoul.warehouse.storage
 import com.whitesoul.warehouse.config.PluginConfig
 import com.whitesoul.warehouse.model.WarehousePageData
 import com.whitesoul.warehouse.model.WarehouseProfile
-import com.whitesoul.warehouse.storage.entity.WarehousePageCategoryEntity
 import com.whitesoul.warehouse.storage.entity.WarehousePageEntity
-import com.whitesoul.warehouse.storage.entity.WarehousePageRemarkEntity
 import com.whitesoul.warehouse.storage.entity.WarehouseProfileEntity
 import taboolib.expansion.ContainerOperator
 import taboolib.expansion.PersistentContainer
@@ -25,23 +23,11 @@ class PtcObjectWarehouseRepository : WarehouseRepository {
     private val pageTableName: String
         get() = "${PluginConfig.tablePrefix}player_warehouse_page"
 
-    private val remarkTableName: String
-        get() = "${PluginConfig.tablePrefix}player_warehouse_remark"
-
-    private val categoryTableName: String
-        get() = "${PluginConfig.tablePrefix}player_warehouse_category"
-
     private val profileOperator: ContainerOperator
         get() = currentContainer[profileTableName]
 
     private val pageOperator: ContainerOperator
         get() = currentContainer[pageTableName]
-
-    private val remarkOperator: ContainerOperator
-        get() = currentContainer[remarkTableName]
-
-    private val categoryOperator: ContainerOperator
-        get() = currentContainer[categoryTableName]
 
     override fun initialize() {
         shutdown()
@@ -49,11 +35,8 @@ class PtcObjectWarehouseRepository : WarehouseRepository {
             type = PluginConfig.databaseSource(),
             ssl = PluginConfig.databaseSslMode,
         ) {
-            // 三张表分别承载档案、页内容、页备注，保持字段职责单一。
             new(WarehouseProfileEntity::class.java, profileTableName)
             new(WarehousePageEntity::class.java, pageTableName)
-            new(WarehousePageRemarkEntity::class.java, remarkTableName)
-            new(WarehousePageCategoryEntity::class.java, categoryTableName)
         }
     }
 
@@ -91,13 +74,6 @@ class PtcObjectWarehouseRepository : WarehouseRepository {
         )?.usedSlots
     }
 
-    override fun loadPageRemark(uuid: UUID, page: Int): String? {
-        return remarkOperator.findOne(
-            WarehousePageRemarkEntity::class.java,
-            WarehousePageRemarkEntity.idOf(uuid, page),
-        )?.remark
-    }
-
     override fun savePage(pageData: WarehousePageData) {
         savePages(listOf(pageData))
     }
@@ -107,17 +83,13 @@ class PtcObjectWarehouseRepository : WarehouseRepository {
             return
         }
         val (emptyPages, nonEmptyPages) = pageDataList.partition {
-            it.countUsedSlots(WarehousePageData.SLOT_COUNT) <= 0
+            it.countUsedSlots(WarehousePageData.SLOT_COUNT) <= 0 && it.remark.isBlank() && it.category.isBlank()
         }
-        // 空页直接删记录，避免数据库里堆积大量“全空仓库页”。
+        // 空页（无物品、无备注、无分类）直接删记录，避免数据库里堆积无用行。
         if (nonEmptyPages.isNotEmpty()) {
             pageOperator.upsert(nonEmptyPages.map { WarehousePageEntity.fromPageData(it) })
         }
         emptyPages.forEach { deletePage(it.owner, it.page) }
-    }
-
-    override fun savePageRemark(uuid: UUID, page: Int, remark: String) {
-        remarkOperator.upsert(listOf(WarehousePageRemarkEntity.of(uuid, page, remark)))
     }
 
     override fun deletePage(uuid: UUID, page: Int) {
@@ -125,30 +97,5 @@ class PtcObjectWarehouseRepository : WarehouseRepository {
             id = WarehousePageEntity.idOf(uuid, page)
         }
         pageOperator.deleteByKey(key)
-    }
-
-    override fun deletePageRemark(uuid: UUID, page: Int) {
-        val key = WarehousePageRemarkEntity().apply {
-            id = WarehousePageRemarkEntity.idOf(uuid, page)
-        }
-        remarkOperator.deleteByKey(key)
-    }
-
-    override fun loadPageCategory(uuid: UUID, page: Int): String? {
-        return categoryOperator.findOne(
-            WarehousePageCategoryEntity::class.java,
-            WarehousePageCategoryEntity.idOf(uuid, page),
-        )?.category
-    }
-
-    override fun savePageCategory(uuid: UUID, page: Int, category: String) {
-        categoryOperator.upsert(listOf(WarehousePageCategoryEntity.of(uuid, page, category)))
-    }
-
-    override fun deletePageCategory(uuid: UUID, page: Int) {
-        val key = WarehousePageCategoryEntity().apply {
-            id = WarehousePageCategoryEntity.idOf(uuid, page)
-        }
-        categoryOperator.deleteByKey(key)
     }
 }

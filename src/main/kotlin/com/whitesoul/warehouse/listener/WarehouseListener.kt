@@ -71,8 +71,6 @@ object WarehouseListener {
         // 下线/被踢统一走同一套收尾逻辑，保证会话与缓存都能被清理。
         if (PluginConfig.saveOnQuit) {
             WarehouseService.saveOwnerPages(player.uniqueId, force = true)
-            WarehouseService.saveOwnerPageRemarks(player.uniqueId, force = true)
-            WarehouseService.saveOwnerPageCategories(player.uniqueId, force = true)
             WarehouseService.saveProfile(player.uniqueId, force = true)
         }
         WarehouseRemarkInputService.clear(player)

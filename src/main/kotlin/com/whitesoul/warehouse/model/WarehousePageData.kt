@@ -12,6 +12,8 @@ data class WarehousePageData(
     val page: Int,
     val contents: Array<ItemStack?> = arrayOfNulls(SLOT_COUNT),
     var updatedAt: Long = System.currentTimeMillis(),
+    var remark: String = "",
+    var category: String = "",
 ) {
 
     /** 所有对 [contents] 数组的读写都必须持有此锁，防止异步保存线程与主线程并发访问。 */

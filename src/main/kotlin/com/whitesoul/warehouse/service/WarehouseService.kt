@@ -24,13 +24,9 @@ object WarehouseService {
     private val repository: WarehouseRepository = PtcObjectWarehouseRepository()
     private val warehouseCache = ConcurrentHashMap<PageKey, WarehousePageData>()
     private val profileCache = ConcurrentHashMap<UUID, WarehouseProfile>()
-    private val remarkCache = ConcurrentHashMap<PageKey, String>()
-    private val categoryCache = ConcurrentHashMap<PageKey, String>()
     // dirty 集合只记录"需要落盘的键"，真正数据本体仍保存在缓存映射里。
     private val dirtyPages = ConcurrentHashMap.newKeySet<PageKey>()
     private val dirtyProfiles = ConcurrentHashMap.newKeySet<UUID>()
-    private val dirtyRemarks = ConcurrentHashMap.newKeySet<PageKey>()
-    private val dirtyCategories = ConcurrentHashMap.newKeySet<PageKey>()
 
     @Volatile
     private var available = false
@@ -55,8 +51,6 @@ object WarehouseService {
         // 关闭前强制刷一次缓存，确保停服时不会丢最后一批未自动保存的数据。
         saveDirtyPages(force = true)
         saveDirtyProfiles(force = true)
-        saveDirtyPageRemarks(force = true)
-        saveDirtyPageCategories(force = true)
         repository.shutdown()
         available = false
     }
@@ -65,16 +59,10 @@ object WarehouseService {
         // reload 先保存后清空，避免切配置时把旧缓存直接丢掉。
         saveDirtyPages(force = true)
         saveDirtyProfiles(force = true)
-        saveDirtyPageRemarks(force = true)
-        saveDirtyPageCategories(force = true)
         warehouseCache.clear()
         profileCache.clear()
-        remarkCache.clear()
-        categoryCache.clear()
         dirtyPages.clear()
         dirtyProfiles.clear()
-        dirtyRemarks.clear()
-        dirtyCategories.clear()
         repository.shutdown()
         initialize()
     }
@@ -166,31 +154,25 @@ object WarehouseService {
     }
 
     fun getPageRemark(owner: UUID, page: Int): String {
-        val key = PageKey(owner, page)
-        return remarkCache.computeIfAbsent(key) {
-            if (available) repository.loadPageRemark(owner, page).orEmpty() else ""
-        }
+        return getOrLoadPage(owner, page).remark
     }
 
     fun updatePageRemark(owner: UUID, page: Int, remark: String): String {
         val normalized = normalizePageRemark(remark)
-        val key = PageKey(owner, page)
-        remarkCache[key] = normalized
-        dirtyRemarks += key
+        val pageData = getOrLoadPage(owner, page)
+        pageData.remark = normalized
+        markDirty(owner, page)
         return normalized
     }
 
     fun getPageCategory(owner: UUID, page: Int): String {
-        val key = PageKey(owner, page)
-        return categoryCache.computeIfAbsent(key) {
-            if (available) repository.loadPageCategory(owner, page).orEmpty() else ""
-        }
+        return getOrLoadPage(owner, page).category
     }
 
     fun updatePageCategory(owner: UUID, page: Int, category: String) {
-        val key = PageKey(owner, page)
-        categoryCache[key] = category
-        dirtyCategories += key
+        val pageData = getOrLoadPage(owner, page)
+        pageData.category = category
+        markDirty(owner, page)
     }
 
     fun updatePageContents(owner: UUID, page: Int, contents: Array<ItemStack?>, size: Int = PluginConfig.pageSize): Boolean {
@@ -304,52 +286,6 @@ object WarehouseService {
         }
     }
 
-    fun savePageRemark(owner: UUID, page: Int, force: Boolean = false): Boolean {
-        if (!available) {
-            return false
-        }
-        val key = PageKey(owner, page)
-        if (!force && key !in dirtyRemarks) {
-            return true
-        }
-        val remark = remarkCache[key].orEmpty()
-        return runCatching {
-            if (remark.isBlank()) {
-                repository.deletePageRemark(owner, page)
-            } else {
-                repository.savePageRemark(owner, page, remark)
-            }
-            dirtyRemarks.remove(key)
-            true
-        }.getOrElse {
-            warning("Failed to save warehouse remark ${owner}:$page - ${it.message}")
-            false
-        }
-    }
-
-    fun savePageCategory(owner: UUID, page: Int, force: Boolean = false): Boolean {
-        if (!available) {
-            return false
-        }
-        val key = PageKey(owner, page)
-        if (!force && key !in dirtyCategories) {
-            return true
-        }
-        val category = categoryCache[key].orEmpty()
-        return runCatching {
-            if (category.isBlank()) {
-                repository.deletePageCategory(owner, page)
-            } else {
-                repository.savePageCategory(owner, page, category)
-            }
-            dirtyCategories.remove(key)
-            true
-        }.getOrElse {
-            warning("Failed to save warehouse category ${owner}:$page - ${it.message}")
-            false
-        }
-    }
-
     fun saveOwnerPages(owner: UUID, force: Boolean = false): Int {
         if (!available) {
             return 0
@@ -375,16 +311,6 @@ object WarehouseService {
         }
     }
 
-    fun saveOwnerPageRemarks(owner: UUID, force: Boolean = false): Int {
-        val keys = dirtyRemarks.filter { it.owner == owner }.toList()
-        return keys.count { savePageRemark(it.owner, it.page, force || it in dirtyRemarks) }
-    }
-
-    fun saveOwnerPageCategories(owner: UUID, force: Boolean = false): Int {
-        val keys = dirtyCategories.filter { it.owner == owner }.toList()
-        return keys.count { savePageCategory(it.owner, it.page, force || it in dirtyCategories) }
-    }
-
     fun saveDirtyPages(force: Boolean = false): Int {
         if (!available) {
             return 0
@@ -408,16 +334,6 @@ object WarehouseService {
                 0
             }
         }
-    }
-
-    fun saveDirtyPageRemarks(force: Boolean = false): Int {
-        val keys = dirtyRemarks.toList()
-        return keys.count { savePageRemark(it.owner, it.page, force || it in dirtyRemarks) }
-    }
-
-    fun saveDirtyPageCategories(force: Boolean = false): Int {
-        val keys = dirtyCategories.toList()
-        return keys.count { savePageCategory(it.owner, it.page, force || it in dirtyCategories) }
     }
 
     fun isPageAccessible(player: Player, page: Int): Boolean {
@@ -540,11 +456,7 @@ object WarehouseService {
     fun evictOwner(uuid: UUID) {
         warehouseCache.keys.removeIf { it.owner == uuid }
         profileCache.remove(uuid)
-        remarkCache.keys.removeIf { it.owner == uuid }
-        categoryCache.keys.removeIf { it.owner == uuid }
         dirtyPages.removeIf { it.owner == uuid }
         dirtyProfiles.remove(uuid)
-        dirtyRemarks.removeIf { it.owner == uuid }
-        dirtyCategories.removeIf { it.owner == uuid }
     }
 }

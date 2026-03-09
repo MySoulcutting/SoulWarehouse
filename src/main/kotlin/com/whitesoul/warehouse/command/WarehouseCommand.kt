@@ -94,8 +94,6 @@ object WarehouseCommand {
             }
             val saved = WarehouseService.saveDirtyPages(force = true)
             WarehouseService.saveDirtyProfiles(force = true)
-            WarehouseService.saveDirtyPageRemarks(force = true)
-            WarehouseService.saveDirtyPageCategories(force = true)
             sender.sendLang("command-saveall-done", saved)
         }
     }

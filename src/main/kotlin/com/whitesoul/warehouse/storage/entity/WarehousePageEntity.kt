@@ -4,6 +4,7 @@ import com.whitesoul.warehouse.model.WarehousePageData
 import com.whitesoul.warehouse.storage.WarehouseSerializer
 import taboolib.expansion.ColumnType
 import taboolib.expansion.Id
+import taboolib.expansion.Length
 import taboolib.module.database.ColumnTypePostgreSQL
 import taboolib.module.database.ColumnTypeSQL
 import taboolib.module.database.ColumnTypeSQLite
@@ -28,6 +29,12 @@ class WarehousePageEntity {
     )
     var content: ByteArray = byteArrayOf()
 
+    @Length(64)
+    var remark: String = ""
+
+    @Length(64)
+    var category: String = ""
+
     var updatedAt: Long = System.currentTimeMillis()
 
     fun toPageData(): WarehousePageData {
@@ -36,6 +43,8 @@ class WarehousePageEntity {
             page = page,
             contents = WarehouseSerializer.deserialize(content),
             updatedAt = updatedAt,
+            remark = remark,
+            category = category,
         )
     }
 
@@ -52,9 +61,10 @@ class WarehousePageEntity {
                 uuid = pageData.owner
                 page = pageData.page
                 usedSlots = pageData.countUsedSlots(WarehousePageData.SLOT_COUNT)
-                // 通过 serializeContents() 在持有 lock 的情况下序列化，避免异步保存时与主线程并发读写 contents。
                 content = pageData.serializeContents()
                 updatedAt = pageData.updatedAt
+                remark = pageData.remark
+                category = pageData.category
             }
         }
     }
