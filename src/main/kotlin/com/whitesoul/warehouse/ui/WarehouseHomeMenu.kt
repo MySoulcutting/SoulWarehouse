@@ -35,7 +35,7 @@ object WarehouseHomeMenu {
                 if (page <= profile.maxPages) {
                     val used = WarehouseService.getPageUsedSlots(player.uniqueId, page, pageSize)
                     val remark = WarehouseService.getPageRemark(player.uniqueId, page)
-                    val category = WarehouseService.getPageCategory(player.uniqueId, page)
+                    val category = WarehouseService.getPageCategory(player.uniqueId, page).ifBlank { "默认" }
                     set(
                         slot,
                         HomeUiConfig.pageItem.buildItem(
@@ -47,7 +47,7 @@ object WarehouseHomeMenu {
                                 "remark" to remark,
                                 "category" to category,
                             ),
-                            skipBlankKeys = setOf("remark", "category"),
+                            skipBlankKeys = setOf("remark"),
                             fallbackMaterial = org.bukkit.Material.CHEST,
                         ),
                     ) {
