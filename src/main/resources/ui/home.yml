@@ -1,5 +1,6 @@
 # 玩家自己的仓库主页
-# 可用占位符：{page} {used} {page_size} {max_pages} {remark}
+# 可用占位符：{page} {used} {page_size} {max_pages} {remark} {category}
+# 当 {remark} 或 {category} 为空时，包含该占位符的整行会自动隐藏
 
 title: "&8玩家仓库"
 rows: 6
@@ -17,9 +18,11 @@ items:
     lore:
       - "&7状态：&a已解锁"
       - "&7已使用：&f{used}&7/&f{page_size}"
+      - "&7分类：&f{category}"
       - "&7备注：&f{remark}"
       - "&e左键打开这一页仓库"
       - "&e右键设置备注"
+      - "&eShift+右键设置分类"
 
   locked-page:
     material: BARRIER

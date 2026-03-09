@@ -1,5 +1,6 @@
 # 管理员查看别人仓库主页
-# 可用占位符：{player} {target} {page} {used} {page_size} {max_pages} {remark}
+# 可用占位符：{player} {target} {page} {used} {page_size} {max_pages} {remark} {category}
+# 当 {remark} 或 {category} 为空时，包含该占位符的整行会自动隐藏
 
 title: "&8查看仓库 - {player}"
 rows: 6
@@ -17,6 +18,7 @@ items:
     lore:
       - "&7状态：&b只读查看"
       - "&7已使用：&f{used}&7/&f{page_size}"
+      - "&7分类：&f{category}"
       - "&7备注：&f{remark}"
       - "&e点击查看这一页内容"
 
