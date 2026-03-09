@@ -78,12 +78,6 @@ object PluginConfig {
     val autoSaveIntervalSeconds: Long
         get() = config.getLong("save.auto-save-interval", 300L).coerceAtLeast(30L)
 
-    val saveOnClose: Boolean
-        get() = config.getBoolean("save.save-on-close", true)
-
-    val saveOnQuit: Boolean
-        get() = config.getBoolean("save.save-on-quit", true)
-
     val debug: Boolean
         get() = config.getBoolean("debug", false)
 

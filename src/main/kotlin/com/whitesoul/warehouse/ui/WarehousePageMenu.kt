@@ -82,7 +82,7 @@ object WarehousePageMenu {
                     ),
                 ) {
                     isCancelled = true
-                    MenuSupport.persistPageContents(player.uniqueId, page, snapshot, PluginConfig.saveOnClose)
+                    MenuSupport.persistPageContents(player.uniqueId, page, snapshot, true)
                     WarehouseSessionService.beginTransition(player, page - 1)
                     MenuSupport.reopen(clicker) {
                         openSelf(player, page - 1)
@@ -111,7 +111,7 @@ object WarehousePageMenu {
                 PageUiConfig.backButton.buildItem(fallbackMaterial = org.bukkit.Material.BOOK),
             ) {
                 isCancelled = true
-                MenuSupport.persistPageContents(player.uniqueId, page, snapshot, PluginConfig.saveOnClose)
+                MenuSupport.persistPageContents(player.uniqueId, page, snapshot, true)
                 WarehouseSessionService.beginTransition(player, null)
                 MenuSupport.reopen(clicker) {
                     WarehouseHomeMenu.openSelf(player)
@@ -135,7 +135,7 @@ object WarehousePageMenu {
                     ),
                 ) {
                     isCancelled = true
-                    MenuSupport.persistPageContents(player.uniqueId, page, snapshot, PluginConfig.saveOnClose)
+                    MenuSupport.persistPageContents(player.uniqueId, page, snapshot, true)
                     WarehouseSessionService.beginTransition(player, page + 1)
                     MenuSupport.reopen(clicker) {
                         openSelf(player, page + 1)
@@ -149,7 +149,7 @@ object WarehousePageMenu {
                     // 切页时会先 close 当前菜单，这种 close 不能当成真正退出仓库。
                     return@onClose
                 }
-                MenuSupport.persistPageContents(viewer.uniqueId, page, snapshot, PluginConfig.saveOnClose)
+                MenuSupport.persistPageContents(viewer.uniqueId, page, snapshot, true)
                 WarehouseSessionService.end(viewer)
             }
         }

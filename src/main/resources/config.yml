@@ -55,11 +55,5 @@ save:
   # 自动保存间隔（秒）
   auto-save-interval: 300
 
-  # 玩家关闭仓库界面时是否立即保存
-  save-on-close: true
-
-  # 玩家退出服务器时是否立即保存
-  save-on-quit: true
-
 # 调试模式，开启后会在控制台输出详细的操作日志（存入、取出、保存耗时等）
 debug: false

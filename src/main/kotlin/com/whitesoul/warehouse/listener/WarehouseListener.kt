@@ -1,6 +1,5 @@
 package com.whitesoul.warehouse.listener
 
-import com.whitesoul.warehouse.config.PluginConfig
 import com.whitesoul.warehouse.service.WarehouseRemarkInputService
 import com.whitesoul.warehouse.service.WarehouseService
 import com.whitesoul.warehouse.service.WarehouseSessionService
@@ -73,11 +72,9 @@ object WarehouseListener {
 
     private fun handleLeave(player: Player) {
         // 下线/被踢统一走同一套收尾逻辑，保证会话与缓存都能被清理。
-        if (PluginConfig.saveOnQuit) {
-            DebugLogger.timed("handleLeave save player=${player.name}") {
-                WarehouseService.saveOwnerPages(player.uniqueId, force = true)
-                WarehouseService.saveProfile(player.uniqueId, force = true)
-            }
+        DebugLogger.timed("handleLeave save player=${player.name}") {
+            WarehouseService.saveOwnerPages(player.uniqueId, force = true)
+            WarehouseService.saveProfile(player.uniqueId, force = true)
         }
         WarehouseRemarkInputService.clear(player)
         WarehouseSessionService.end(player)
