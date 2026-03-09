@@ -87,6 +87,9 @@ object PluginConfig {
     val autoStoreDrops: Boolean
         get() = config.getBoolean("pickup.auto-store-drops", true)
 
+    val debug: Boolean
+        get() = config.getBoolean("debug", false)
+
     data class WarehouseCategory(val name: String, val lorePatterns: List<String>)
 
     val categories: Map<String, WarehouseCategory>

@@ -5,6 +5,7 @@ import com.whitesoul.warehouse.model.WarehousePageData
 import com.whitesoul.warehouse.model.WarehouseProfile
 import com.whitesoul.warehouse.storage.PtcObjectWarehouseRepository
 import com.whitesoul.warehouse.storage.WarehouseRepository
+import com.whitesoul.warehouse.util.DebugLogger
 import com.whitesoul.warehouse.util.cloneOrNull
 import org.bukkit.ChatColor
 import org.bukkit.OfflinePlayer
@@ -187,8 +188,10 @@ object WarehouseService {
     fun storeItem(player: Player, itemStack: ItemStack, size: Int = PluginConfig.pageSize): StoreItemResult {
         val normalized = itemStack.cloneOrNull() ?: return StoreItemResult(0, null)
         if (!available || !isItemAllowed(normalized)) {
+            DebugLogger.log { "storeItem 拒绝: player=${player.name}, item=${normalized.type.name}, allowed=${isItemAllowed(normalized)}, available=$available" }
             return StoreItemResult(0, normalized)
         }
+        val start = System.nanoTime()
         var remainingAmount = normalized.amount
         val accessiblePages = getAccessiblePages(player)
         val categories = PluginConfig.categories
@@ -197,6 +200,8 @@ object WarehouseService {
             if (!isPageAcceptItem(player.uniqueId, page, normalized, categories)) continue
             remainingAmount = storeIntoPage(player.uniqueId, page, normalized, remainingAmount, size, mergeOnly = true)
             if (remainingAmount <= 0) {
+                val elapsed = (System.nanoTime() - start) / 1_000_000.0
+                DebugLogger.log { "storeItem 完成(合并): player=${player.name}, item=${normalized.type.name}, amount=${normalized.amount}, elapsed=${String.format("%.2f", elapsed)}ms" }
                 return StoreItemResult(normalized.amount, null)
             }
         }
@@ -204,10 +209,14 @@ object WarehouseService {
             if (!isPageAcceptItem(player.uniqueId, page, normalized, categories)) continue
             remainingAmount = storeIntoPage(player.uniqueId, page, normalized, remainingAmount, size, mergeOnly = false)
             if (remainingAmount <= 0) {
+                val elapsed = (System.nanoTime() - start) / 1_000_000.0
+                DebugLogger.log { "storeItem 完成(新槽): player=${player.name}, item=${normalized.type.name}, amount=${normalized.amount}, elapsed=${String.format("%.2f", elapsed)}ms" }
                 return StoreItemResult(normalized.amount, null)
             }
         }
         val storedAmount = normalized.amount - remainingAmount
+        val elapsed = (System.nanoTime() - start) / 1_000_000.0
+        DebugLogger.log { "storeItem 部分存入: player=${player.name}, item=${normalized.type.name}, stored=$storedAmount, remaining=$remainingAmount, elapsed=${String.format("%.2f", elapsed)}ms" }
         return StoreItemResult(
             storedAmount = storedAmount,
             remaining = normalized.clone().apply { amount = remainingAmount },
@@ -275,14 +284,16 @@ object WarehouseService {
             return true
         }
         val pageData = warehouseCache[key] ?: return true
-        return runCatching {
-            pageData.updatedAt = System.currentTimeMillis()
-            repository.savePage(pageData)
-            dirtyPages.remove(key)
-            true
-        }.getOrElse {
-            warning("Failed to save warehouse page ${owner}:$page - ${it.message}")
-            false
+        return DebugLogger.timed("savePage owner=$owner, page=$page") {
+            runCatching {
+                pageData.updatedAt = System.currentTimeMillis()
+                repository.savePage(pageData)
+                dirtyPages.remove(key)
+                true
+            }.getOrElse {
+                warning("Failed to save warehouse page ${owner}:$page - ${it.message}")
+                false
+            }
         }
     }
 
@@ -321,17 +332,19 @@ object WarehouseService {
         if (pages.isEmpty()) {
             return 0
         }
-        return runCatching {
-            pages.forEach { (_, pageData) -> pageData.updatedAt = System.currentTimeMillis() }
-            repository.savePages(pages.map { it.second })
-            pages.forEach { (key, _) -> dirtyPages.remove(key) }
-            pages.size
-        }.getOrElse {
-            warning("Failed to batch save warehouse pages - ${it.message}")
-            if (force) {
-                pages.count { (key, _) -> savePage(key.owner, key.page, true) }
-            } else {
-                0
+        return DebugLogger.timed("saveDirtyPages count=${pages.size}") {
+            runCatching {
+                pages.forEach { (_, pageData) -> pageData.updatedAt = System.currentTimeMillis() }
+                repository.savePages(pages.map { it.second })
+                pages.forEach { (key, _) -> dirtyPages.remove(key) }
+                pages.size
+            }.getOrElse {
+                warning("Failed to batch save warehouse pages - ${it.message}")
+                if (force) {
+                    pages.count { (key, _) -> savePage(key.owner, key.page, true) }
+                } else {
+                    0
+                }
             }
         }
     }

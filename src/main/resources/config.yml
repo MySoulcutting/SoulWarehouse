@@ -64,3 +64,6 @@ save:
 pickup:
   # 玩家拾取地面掉落物时，是否优先自动存入仓库
   auto-store-drops: true
+
+# 调试模式，开启后会在控制台输出详细的操作日志（存入、取出、保存耗时等）
+debug: false

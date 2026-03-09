@@ -1,6 +1,7 @@
 package com.whitesoul.warehouse.ui
 
 import com.whitesoul.warehouse.service.WarehouseService
+import com.whitesoul.warehouse.util.DebugLogger
 import com.whitesoul.warehouse.util.cloneOrNull
 import org.bukkit.ChatColor
 import org.bukkit.Material
@@ -38,7 +39,8 @@ object MenuSupport {
     }
 
     fun persistPageContents(owner: UUID, page: Int, contents: Array<ItemStack?>, save: Boolean) {
-        WarehouseService.updatePageContents(owner, page, contents, PageUiConfig.storageCapacity)
+        val changed = WarehouseService.updatePageContents(owner, page, contents, PageUiConfig.storageCapacity)
+        DebugLogger.log { "persistPageContents owner=$owner, page=$page, changed=$changed, save=$save" }
         if (save) {
             WarehouseService.savePage(owner, page)
         }

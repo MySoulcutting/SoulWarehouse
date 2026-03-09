@@ -5,6 +5,7 @@ import com.whitesoul.warehouse.service.WarehouseRemarkInputService
 import com.whitesoul.warehouse.service.WarehouseService
 import com.whitesoul.warehouse.service.WarehouseSessionService
 import com.whitesoul.warehouse.ui.PageUiConfig
+import com.whitesoul.warehouse.util.DebugLogger
 import org.bukkit.entity.Player
 import org.bukkit.event.player.PlayerKickEvent
 import org.bukkit.event.player.PlayerPickupItemEvent
@@ -33,11 +34,14 @@ object WarehouseListener {
             return
         }
         val itemEntity = event.item
+        val itemName = itemEntity.itemStack.getName()
+        DebugLogger.log { "onPickup 开始: player=${player.name}, item=$itemName x${itemEntity.itemStack.amount}" }
         val result = WarehouseService.storeItem(player, itemEntity.itemStack, PageUiConfig.storageCapacity)
         if (result.storedAmount <= 0) {
+            DebugLogger.log { "onPickup 未存入: player=${player.name}, item=$itemName" }
             return
         }
-        val itemName = itemEntity.itemStack.getName()
+        DebugLogger.log { "onPickup 存入: player=${player.name}, item=$itemName, stored=${result.storedAmount}, remaining=${result.remaining?.amount ?: 0}" }
         player.sendLang("auto-store-message", itemName, result.storedAmount)
         // 取消原拾取流程，改为“仓库优先，背包兜底，地面保留剩余”。
         event.isCancelled = true
@@ -70,8 +74,10 @@ object WarehouseListener {
     private fun handleLeave(player: Player) {
         // 下线/被踢统一走同一套收尾逻辑，保证会话与缓存都能被清理。
         if (PluginConfig.saveOnQuit) {
-            WarehouseService.saveOwnerPages(player.uniqueId, force = true)
-            WarehouseService.saveProfile(player.uniqueId, force = true)
+            DebugLogger.timed("handleLeave save player=${player.name}") {
+                WarehouseService.saveOwnerPages(player.uniqueId, force = true)
+                WarehouseService.saveProfile(player.uniqueId, force = true)
+            }
         }
         WarehouseRemarkInputService.clear(player)
         WarehouseSessionService.end(player)
