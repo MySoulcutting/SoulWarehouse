@@ -36,22 +36,26 @@ object WarehouseService {
     private var lastError: String? = null
 
     fun initialize() {
-        runCatching {
-            repository.initialize()
-            available = true
-            lastError = null
-        }.onFailure {
-            available = false
-            lastError = it.message
-            warning("Failed to initialize SoulWarehouse storage: ${it.message}")
-            it.printStackTrace()
+        DebugLogger.timed("initialize 数据库连接") {
+            runCatching {
+                repository.initialize()
+                available = true
+                lastError = null
+            }.onFailure {
+                available = false
+                lastError = it.message
+                warning("Failed to initialize SoulWarehouse storage: ${it.message}")
+                it.printStackTrace()
+            }
         }
     }
 
     fun shutdown() {
         // 关闭前强制刷一次缓存，确保停服时不会丢最后一批未自动保存的数据。
-        saveDirtyPages(force = true)
-        saveDirtyProfiles(force = true)
+        DebugLogger.timed("shutdown 保存全部缓存") {
+            saveDirtyPages(force = true)
+            saveDirtyProfiles(force = true)
+        }
         repository.shutdown()
         available = false
     }
@@ -142,7 +146,9 @@ object WarehouseService {
         val key = PageKey(owner, page)
         return warehouseCache.computeIfAbsent(key) {
             // 页面按需加载，未创建过的数据直接回退到一页空仓。
-            if (available) repository.loadPage(owner, page) ?: WarehousePageData(owner, page) else WarehousePageData(owner, page)
+            DebugLogger.timed("loadPage owner=$owner, page=$page") {
+                if (available) repository.loadPage(owner, page) ?: WarehousePageData(owner, page) else WarehousePageData(owner, page)
+            }
         }
     }
 
@@ -307,17 +313,19 @@ object WarehouseService {
         if (pages.isEmpty()) {
             return 0
         }
-        return runCatching {
-            pages.forEach { (_, pageData) -> pageData.updatedAt = System.currentTimeMillis() }
-            repository.savePages(pages.map { it.second })
-            pages.forEach { (key, _) -> dirtyPages.remove(key) }
-            pages.size
-        }.getOrElse {
-            warning("Failed to batch save warehouse pages for $owner - ${it.message}")
-            if (force) {
-                pages.count { (key, _) -> savePage(key.owner, key.page, true) }
-            } else {
-                0
+        return DebugLogger.timed("saveOwnerPages owner=$owner, count=${pages.size}") {
+            runCatching {
+                pages.forEach { (_, pageData) -> pageData.updatedAt = System.currentTimeMillis() }
+                repository.savePages(pages.map { it.second })
+                pages.forEach { (key, _) -> dirtyPages.remove(key) }
+                pages.size
+            }.getOrElse {
+                warning("Failed to batch save warehouse pages for $owner - ${it.message}")
+                if (force) {
+                    pages.count { (key, _) -> savePage(key.owner, key.page, true) }
+                } else {
+                    0
+                }
             }
         }
     }

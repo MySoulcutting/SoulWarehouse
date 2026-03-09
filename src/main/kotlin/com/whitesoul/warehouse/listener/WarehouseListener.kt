@@ -18,7 +18,7 @@ object WarehouseListener {
 
     @SubscribeEvent
     fun onPickup(event: PlayerPickupItemEvent) {
-        if (event.isCancelled || !PluginConfig.autoStoreDrops) {
+        if (event.isCancelled) {
             return
         }
         val player = event.player

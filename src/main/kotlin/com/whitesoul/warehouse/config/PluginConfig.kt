@@ -84,9 +84,6 @@ object PluginConfig {
     val saveOnQuit: Boolean
         get() = config.getBoolean("save.save-on-quit", true)
 
-    val autoStoreDrops: Boolean
-        get() = config.getBoolean("pickup.auto-store-drops", true)
-
     val debug: Boolean
         get() = config.getBoolean("debug", false)
 

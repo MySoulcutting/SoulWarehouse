@@ -1,6 +1,5 @@
 package com.whitesoul.warehouse.ui
 
-import com.whitesoul.warehouse.config.PluginConfig
 import com.whitesoul.warehouse.service.WarehouseRemarkInputService
 import com.whitesoul.warehouse.service.WarehouseService
 import org.bukkit.entity.Player
@@ -94,27 +93,25 @@ object WarehouseHomeMenu {
                 isCancelled = true
             }
 
-            // 自动拾取入仓开关按钮（仅服务端总开关开启时显示）
-            if (PluginConfig.autoStoreDrops) {
-                val autoPickup = profile.autoPickup
-                val statusText = if (autoPickup) "&a已开启" else "&c已关闭"
-                set(
-                    HomeUiConfig.autoPickupButton.slot!!,
-                    HomeUiConfig.autoPickupButton.buildItem(
-                        placeholders = mapOf("status" to statusText),
-                        fallbackMaterial = org.bukkit.Material.HOPPER,
-                    ),
-                ) {
-                    isCancelled = true
-                    val newState = WarehouseService.toggleAutoPickup(player)
-                    if (newState) {
-                        player.sendLang("auto-pickup-enabled")
-                    } else {
-                        player.sendLang("auto-pickup-disabled")
-                    }
-                    MenuSupport.reopen(clicker) {
-                        openSelf(player)
-                    }
+            // 自动拾取入仓开关按钮
+            val autoPickup = profile.autoPickup
+            val statusText = if (autoPickup) "&a已开启" else "&c已关闭"
+            set(
+                HomeUiConfig.autoPickupButton.slot!!,
+                HomeUiConfig.autoPickupButton.buildItem(
+                    placeholders = mapOf("status" to statusText),
+                    fallbackMaterial = org.bukkit.Material.HOPPER,
+                ),
+            ) {
+                isCancelled = true
+                val newState = WarehouseService.toggleAutoPickup(player)
+                if (newState) {
+                    player.sendLang("auto-pickup-enabled")
+                } else {
+                    player.sendLang("auto-pickup-disabled")
+                }
+                MenuSupport.reopen(clicker) {
+                    openSelf(player)
                 }
             }
 
