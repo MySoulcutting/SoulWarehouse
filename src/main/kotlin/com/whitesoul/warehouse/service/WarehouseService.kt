@@ -421,12 +421,24 @@ object WarehouseService {
         if (typeName in PluginConfig.blacklist) {
             return false
         }
-        // 同时检查物品显示名称，去色后忽略大小写匹配
-        val displayName = itemStack.itemMeta?.displayName
+        val meta = itemStack.itemMeta
+        // 检查物品显示名称，去色后忽略大小写匹配
+        val displayName = meta?.displayName
         if (displayName != null) {
             val plain = ChatColor.stripColor(displayName).orEmpty().trim().uppercase()
             if (plain.isNotEmpty() && plain in PluginConfig.blacklist) {
                 return false
+            }
+        }
+        // 检查物品 Lore，任意一行去色后匹配黑名单即拦截
+        val lore = meta?.lore
+        if (lore != null) {
+            val blacklist = PluginConfig.blacklist
+            for (line in lore) {
+                val plain = ChatColor.stripColor(line).orEmpty().trim().uppercase()
+                if (plain.isNotEmpty() && plain in blacklist) {
+                    return false
+                }
             }
         }
         if (!PluginConfig.allowShulkerBox && typeName.endsWith("SHULKER_BOX")) {

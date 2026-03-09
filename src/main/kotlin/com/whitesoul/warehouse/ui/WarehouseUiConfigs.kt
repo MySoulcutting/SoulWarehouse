@@ -234,9 +234,11 @@ object HomeUiConfig {
                 lore = listOf(
                     "&7状态：&a已解锁",
                     "&7已使用：&f{used}&7/&f{page_size}",
+                    "&7分类：&f{category}",
                     "&7备注：&f{remark}",
                     "&e左键打开这一页仓库",
                     "&e右键设置备注",
+                    "&e Shift+右键设置分类",
                 ),
             ),
         )
@@ -389,6 +391,7 @@ object InspectHomeUiConfig {
                 lore = listOf(
                     "&7状态：&b只读查看",
                     "&7已使用：&f{used}&7/&f{page_size}",
+                    "&7分类：&f{category}",
                     "&7备注：&f{remark}",
                     "&e点击查看这一页内容",
                 ),
