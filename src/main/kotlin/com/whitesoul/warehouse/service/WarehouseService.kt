@@ -118,6 +118,18 @@ object WarehouseService {
         return result
     }
 
+    fun toggleAutoPickup(player: Player): Boolean {
+        val profile = getProfile(player)
+        profile.autoPickup = !profile.autoPickup
+        profile.updatedAt = System.currentTimeMillis()
+        markProfileDirty(player.uniqueId)
+        return profile.autoPickup
+    }
+
+    fun isAutoPickup(player: Player): Boolean {
+        return getProfile(player).autoPickup
+    }
+
     fun getProfile(player: OfflinePlayer): WarehouseProfile {
         val cached = profileCache[player.uniqueId]
         if (cached != null) {

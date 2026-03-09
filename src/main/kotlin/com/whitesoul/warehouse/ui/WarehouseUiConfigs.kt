@@ -170,6 +170,7 @@ object HomeUiConfig {
     lateinit var config: Configuration
 
     private val helpDefault = UiItemTemplate(45, Material.BOOK.name, "&e使用说明")
+    private val autoPickupDefault = UiItemTemplate(46, Material.HOPPER.name, "&e自动拾取入仓")
     private val profileDefault = UiItemTemplate(49, Material.PAPER.name, "&b仓库信息")
     private val refreshDefault = UiItemTemplate(50, Material.COMPASS.name, "&a刷新界面")
     private val closeDefault = UiItemTemplate(53, Material.BARRIER.name, "&c关闭菜单")
@@ -178,6 +179,7 @@ object HomeUiConfig {
         val title: String,
         val rows: Int,
         val helpButton: UiItemTemplate,
+        val autoPickupButton: UiItemTemplate,
         val profileButton: UiItemTemplate,
         val refreshButton: UiItemTemplate,
         val closeButton: UiItemTemplate,
@@ -198,6 +200,7 @@ object HomeUiConfig {
             requested = config.getInt("rows", 6),
             relevantSlots = UiConfigSupport.readSlots(config, "page-slots") + listOf(
                 UiConfigSupport.readRawSlot(config, "items.help", helpDefault.slot!!),
+                UiConfigSupport.readRawSlot(config, "items.auto-pickup", autoPickupDefault.slot!!),
                 UiConfigSupport.readRawSlot(config, "items.profile", profileDefault.slot!!),
                 UiConfigSupport.readRawSlot(config, "items.refresh", refreshDefault.slot!!),
                 UiConfigSupport.readRawSlot(config, "items.close", closeDefault.slot!!),
@@ -206,10 +209,11 @@ object HomeUiConfig {
         val size = rows * 9
 
         val helpButton = readControlItem("items.help", helpDefault, setOf(), size)
-        val profileButton = readControlItem("items.profile", profileDefault, setOf(helpButton.slot!!), size)
-        val refreshButton = readControlItem("items.refresh", refreshDefault, setOf(helpButton.slot!!, profileButton.slot!!), size)
-        val closeButton = readControlItem("items.close", closeDefault, setOf(helpButton.slot!!, profileButton.slot!!, refreshButton.slot!!), size)
-        val controlSlots = listOf(helpButton.slot!!, profileButton.slot!!, refreshButton.slot!!, closeButton.slot!!)
+        val autoPickupButton = readControlItem("items.auto-pickup", autoPickupDefault, setOf(helpButton.slot!!), size)
+        val profileButton = readControlItem("items.profile", profileDefault, setOf(helpButton.slot!!, autoPickupButton.slot!!), size)
+        val refreshButton = readControlItem("items.refresh", refreshDefault, setOf(helpButton.slot!!, autoPickupButton.slot!!, profileButton.slot!!), size)
+        val closeButton = readControlItem("items.close", closeDefault, setOf(helpButton.slot!!, autoPickupButton.slot!!, profileButton.slot!!, refreshButton.slot!!), size)
+        val controlSlots = listOf(helpButton.slot!!, autoPickupButton.slot!!, profileButton.slot!!, refreshButton.slot!!, closeButton.slot!!)
 
         val pageSlots = UiConfigSupport.resolveSlotList(
             configured = UiConfigSupport.readSlots(config, "page-slots"),
@@ -260,6 +264,7 @@ object HomeUiConfig {
             title = title,
             rows = rows,
             helpButton = helpButton,
+            autoPickupButton = autoPickupButton,
             profileButton = profileButton,
             refreshButton = refreshButton,
             closeButton = closeButton,
@@ -283,6 +288,9 @@ object HomeUiConfig {
 
     val helpButton: UiItemTemplate
         get() = layout().helpButton
+
+    val autoPickupButton: UiItemTemplate
+        get() = layout().autoPickupButton
 
     val profileButton: UiItemTemplate
         get() = layout().profileButton

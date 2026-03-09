@@ -15,6 +15,8 @@ class WarehouseProfileEntity {
 
     var maxPages: Int = 1
 
+    var autoPickup: Boolean = true
+
     var createdAt: Long = System.currentTimeMillis()
 
     var updatedAt: Long = System.currentTimeMillis()
@@ -26,6 +28,7 @@ class WarehouseProfileEntity {
             uuid = uuid,
             name = name,
             maxPages = maxPages,
+            autoPickup = autoPickup,
             createdAt = createdAt,
             updatedAt = updatedAt,
             lastOpenAt = lastOpenAt,
@@ -39,6 +42,7 @@ class WarehouseProfileEntity {
                 uuid = profile.uuid
                 name = profile.name
                 maxPages = profile.maxPages
+                autoPickup = profile.autoPickup
                 createdAt = profile.createdAt
                 updatedAt = profile.updatedAt
                 lastOpenAt = profile.lastOpenAt

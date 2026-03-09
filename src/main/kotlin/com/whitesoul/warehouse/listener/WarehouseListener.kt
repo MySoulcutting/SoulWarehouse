@@ -24,6 +24,10 @@ object WarehouseListener {
         if (!WarehouseService.isAvailable() || !player.hasPermission("soulwarehouse.use")) {
             return
         }
+        // 玩家个人关闭了自动拾取入仓
+        if (!WarehouseService.isAutoPickup(player)) {
+            return
+        }
         if (WarehouseSessionService.hasSession(player)) {
             // 玩家正在仓库界面时，菜单持有的 snapshot 会在关闭时回写，直接自动入仓会被覆盖。
             return

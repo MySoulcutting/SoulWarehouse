@@ -40,6 +40,15 @@ items:
       - "&7/warehouse open <页码> &f直达自己的某一页"
       - "&7/warehouse open <玩家> [页码] &f管理员只读查看"
 
+  auto-pickup:
+    slot: 46
+    material: HOPPER
+    name: "&e自动拾取入仓"
+    lore:
+      - "&7当前状态：{status}"
+      - "&7点击切换自动拾取开关"
+      - "&7开启后拾取物品会优先存入仓库"
+
   profile:
     slot: 49
     material: PAPER
