@@ -36,6 +36,7 @@ object WarehouseInspectMenu {
                 if (WarehouseService.isInspectPageAccessible(profile, page)) {
                     val used = WarehouseService.getPageUsedSlots(target.uniqueId, page, pageSize)
                     val remark = WarehouseService.getPageRemark(target.uniqueId, page)
+                    val category = WarehouseService.getPageCategory(target.uniqueId, page)
                     set(
                         slot,
                         InspectHomeUiConfig.pageItem.buildItem(
@@ -46,8 +47,9 @@ object WarehouseInspectMenu {
                                 "player" to targetName,
                                 "target" to targetName,
                                 "remark" to remark,
+                                "category" to category,
                             ),
-                            skipBlankKeys = setOf("remark"),
+                            skipBlankKeys = setOf("remark", "category"),
                             fallbackMaterial = org.bukkit.Material.ENDER_CHEST,
                         ),
                     ) {

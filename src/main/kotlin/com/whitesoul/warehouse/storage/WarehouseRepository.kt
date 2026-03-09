@@ -31,4 +31,10 @@ interface WarehouseRepository {
     fun deletePage(uuid: UUID, page: Int)
 
     fun deletePageRemark(uuid: UUID, page: Int)
+
+    fun loadPageCategory(uuid: UUID, page: Int): String?
+
+    fun savePageCategory(uuid: UUID, page: Int, category: String)
+
+    fun deletePageCategory(uuid: UUID, page: Int)
 }

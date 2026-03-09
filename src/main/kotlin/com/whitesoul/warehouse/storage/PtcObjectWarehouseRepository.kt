@@ -3,6 +3,7 @@ package com.whitesoul.warehouse.storage
 import com.whitesoul.warehouse.config.PluginConfig
 import com.whitesoul.warehouse.model.WarehousePageData
 import com.whitesoul.warehouse.model.WarehouseProfile
+import com.whitesoul.warehouse.storage.entity.WarehousePageCategoryEntity
 import com.whitesoul.warehouse.storage.entity.WarehousePageEntity
 import com.whitesoul.warehouse.storage.entity.WarehousePageRemarkEntity
 import com.whitesoul.warehouse.storage.entity.WarehouseProfileEntity
@@ -27,6 +28,9 @@ class PtcObjectWarehouseRepository : WarehouseRepository {
     private val remarkTableName: String
         get() = "${PluginConfig.tablePrefix}player_warehouse_remark"
 
+    private val categoryTableName: String
+        get() = "${PluginConfig.tablePrefix}player_warehouse_category"
+
     private val profileOperator: ContainerOperator
         get() = currentContainer[profileTableName]
 
@@ -35,6 +39,9 @@ class PtcObjectWarehouseRepository : WarehouseRepository {
 
     private val remarkOperator: ContainerOperator
         get() = currentContainer[remarkTableName]
+
+    private val categoryOperator: ContainerOperator
+        get() = currentContainer[categoryTableName]
 
     override fun initialize() {
         shutdown()
@@ -46,6 +53,7 @@ class PtcObjectWarehouseRepository : WarehouseRepository {
             new(WarehouseProfileEntity::class.java, profileTableName)
             new(WarehousePageEntity::class.java, pageTableName)
             new(WarehousePageRemarkEntity::class.java, remarkTableName)
+            new(WarehousePageCategoryEntity::class.java, categoryTableName)
         }
     }
 
@@ -124,5 +132,23 @@ class PtcObjectWarehouseRepository : WarehouseRepository {
             id = WarehousePageRemarkEntity.idOf(uuid, page)
         }
         remarkOperator.deleteByKey(key)
+    }
+
+    override fun loadPageCategory(uuid: UUID, page: Int): String? {
+        return categoryOperator.findOne(
+            WarehousePageCategoryEntity::class.java,
+            WarehousePageCategoryEntity.idOf(uuid, page),
+        )?.category
+    }
+
+    override fun savePageCategory(uuid: UUID, page: Int, category: String) {
+        categoryOperator.upsert(listOf(WarehousePageCategoryEntity.of(uuid, page, category)))
+    }
+
+    override fun deletePageCategory(uuid: UUID, page: Int) {
+        val key = WarehousePageCategoryEntity().apply {
+            id = WarehousePageCategoryEntity.idOf(uuid, page)
+        }
+        categoryOperator.deleteByKey(key)
     }
 }

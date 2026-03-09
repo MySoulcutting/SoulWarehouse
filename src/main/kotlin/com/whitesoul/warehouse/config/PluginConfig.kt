@@ -1,5 +1,7 @@
 package com.whitesoul.warehouse.config
 
+import org.bukkit.ChatColor
+import org.bukkit.inventory.ItemStack
 import taboolib.common.Inject
 import taboolib.expansion.dbFile
 import taboolib.library.configuration.ConfigurationSection
@@ -81,6 +83,27 @@ object PluginConfig {
 
     val autoStoreDrops: Boolean
         get() = config.getBoolean("pickup.auto-store-drops", true)
+
+    data class WarehouseCategory(val name: String, val lorePatterns: List<String>)
+
+    val categories: Map<String, WarehouseCategory>
+        get() {
+            val section = config.getConfigurationSection("warehouse.categories") ?: return emptyMap()
+            return section.getKeys(false).associateWith { name ->
+                val patterns = config.getStringList("warehouse.categories.$name")
+                WarehouseCategory(name, patterns)
+            }
+        }
+
+    val categoryNames: List<String>
+        get() = categories.keys.toList()
+
+    fun matchCategory(itemStack: ItemStack, category: WarehouseCategory): Boolean {
+        val meta = itemStack.itemMeta ?: return false
+        val lore = meta.lore ?: return false
+        val coloredPatterns = category.lorePatterns.map { ChatColor.translateAlternateColorCodes('&', it) }
+        return lore.any { line -> coloredPatterns.any { pattern -> line.contains(pattern) } }
+    }
 
     fun databaseSource(): Any {
         return when (databaseType) {

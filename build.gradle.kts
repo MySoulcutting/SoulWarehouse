@@ -10,7 +10,7 @@ plugins {
 taboolib {
     env {
         // 安装模块
-        install(Basic, Bukkit, BukkitHook, BukkitUI, BukkitUtil, CommandHelper, I18n, Database, PtcObject, Ptc)
+        install(Basic, Bukkit, BukkitHook, BukkitUI, BukkitUtil, BukkitNMS, BukkitNMSUtil, CommandHelper, I18n, Database, PtcObject, Ptc)
     }
     version { taboolib = "6.2.4-99fb800" }
 }

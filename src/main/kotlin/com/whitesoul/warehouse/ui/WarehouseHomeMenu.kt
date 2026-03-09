@@ -3,6 +3,7 @@ package com.whitesoul.warehouse.ui
 import com.whitesoul.warehouse.service.WarehouseRemarkInputService
 import com.whitesoul.warehouse.service.WarehouseService
 import org.bukkit.entity.Player
+import org.bukkit.event.inventory.ClickType
 import taboolib.module.ui.openMenu
 import taboolib.module.ui.type.Chest
 import taboolib.platform.util.sendLang
@@ -34,6 +35,7 @@ object WarehouseHomeMenu {
                 if (page <= profile.maxPages) {
                     val used = WarehouseService.getPageUsedSlots(player.uniqueId, page, pageSize)
                     val remark = WarehouseService.getPageRemark(player.uniqueId, page)
+                    val category = WarehouseService.getPageCategory(player.uniqueId, page)
                     set(
                         slot,
                         HomeUiConfig.pageItem.buildItem(
@@ -43,18 +45,30 @@ object WarehouseHomeMenu {
                                 "page_size" to pageSize,
                                 "max_pages" to profile.maxPages,
                                 "remark" to remark,
+                                "category" to category,
                             ),
-                            skipBlankKeys = setOf("remark"),
+                            skipBlankKeys = setOf("remark", "category"),
                             fallbackMaterial = org.bukkit.Material.CHEST,
                         ),
                     ) {
                         isCancelled = true
-                        // 左键进入仓库页，右键进入聊天备注编辑，避免主页再额外放一个管理按钮。
-                        if (clickEventOrNull()?.click?.isRightClick == true) {
-                            WarehouseRemarkInputService.begin(player, page)
-                        } else {
-                            MenuSupport.reopen(clicker) {
-                                WarehousePageMenu.openSelf(player, page)
+                        val click = clickEventOrNull()?.click
+                        when {
+                            // Shift+右键打开分类选择菜单
+                            click == ClickType.SHIFT_RIGHT -> {
+                                MenuSupport.reopen(clicker) {
+                                    WarehouseCategoryMenu.open(player, page)
+                                }
+                            }
+                            // 右键进入聊天备注编辑
+                            click?.isRightClick == true -> {
+                                WarehouseRemarkInputService.begin(player, page)
+                            }
+                            // 左键进入仓库页
+                            else -> {
+                                MenuSupport.reopen(clicker) {
+                                    WarehousePageMenu.openSelf(player, page)
+                                }
                             }
                         }
                     }

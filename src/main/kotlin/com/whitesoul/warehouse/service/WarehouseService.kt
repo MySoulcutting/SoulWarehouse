@@ -25,10 +25,12 @@ object WarehouseService {
     private val warehouseCache = ConcurrentHashMap<PageKey, WarehousePageData>()
     private val profileCache = ConcurrentHashMap<UUID, WarehouseProfile>()
     private val remarkCache = ConcurrentHashMap<PageKey, String>()
-    // dirty 集合只记录“需要落盘的键”，真正数据本体仍保存在缓存映射里。
+    private val categoryCache = ConcurrentHashMap<PageKey, String>()
+    // dirty 集合只记录"需要落盘的键"，真正数据本体仍保存在缓存映射里。
     private val dirtyPages = ConcurrentHashMap.newKeySet<PageKey>()
     private val dirtyProfiles = ConcurrentHashMap.newKeySet<UUID>()
     private val dirtyRemarks = ConcurrentHashMap.newKeySet<PageKey>()
+    private val dirtyCategories = ConcurrentHashMap.newKeySet<PageKey>()
 
     @Volatile
     private var available = false
@@ -54,6 +56,7 @@ object WarehouseService {
         saveDirtyPages(force = true)
         saveDirtyProfiles(force = true)
         saveDirtyPageRemarks(force = true)
+        saveDirtyPageCategories(force = true)
         repository.shutdown()
         available = false
     }
@@ -63,12 +66,15 @@ object WarehouseService {
         saveDirtyPages(force = true)
         saveDirtyProfiles(force = true)
         saveDirtyPageRemarks(force = true)
+        saveDirtyPageCategories(force = true)
         warehouseCache.clear()
         profileCache.clear()
         remarkCache.clear()
+        categoryCache.clear()
         dirtyPages.clear()
         dirtyProfiles.clear()
         dirtyRemarks.clear()
+        dirtyCategories.clear()
         repository.shutdown()
         initialize()
     }
@@ -162,6 +168,19 @@ object WarehouseService {
         return normalized
     }
 
+    fun getPageCategory(owner: UUID, page: Int): String {
+        val key = PageKey(owner, page)
+        return categoryCache.computeIfAbsent(key) {
+            if (available) repository.loadPageCategory(owner, page).orEmpty() else ""
+        }
+    }
+
+    fun updatePageCategory(owner: UUID, page: Int, category: String) {
+        val key = PageKey(owner, page)
+        categoryCache[key] = category
+        dirtyCategories += key
+    }
+
     fun updatePageContents(owner: UUID, page: Int, contents: Array<ItemStack?>, size: Int = PluginConfig.pageSize): Boolean {
         val pageData = getOrLoadPage(owner, page)
         val changed = pageData.replaceContents(contents, size)
@@ -178,14 +197,17 @@ object WarehouseService {
         }
         var remainingAmount = normalized.amount
         val accessiblePages = getAccessiblePages(player)
+        val categories = PluginConfig.categories
         // 先补满已有堆叠，再尝试占用空格，能最大化压缩仓库空间。
         for (page in 1..accessiblePages) {
+            if (!isPageAcceptItem(player.uniqueId, page, normalized, categories)) continue
             remainingAmount = storeIntoPage(player.uniqueId, page, normalized, remainingAmount, size, mergeOnly = true)
             if (remainingAmount <= 0) {
                 return StoreItemResult(normalized.amount, null)
             }
         }
         for (page in 1..accessiblePages) {
+            if (!isPageAcceptItem(player.uniqueId, page, normalized, categories)) continue
             remainingAmount = storeIntoPage(player.uniqueId, page, normalized, remainingAmount, size, mergeOnly = false)
             if (remainingAmount <= 0) {
                 return StoreItemResult(normalized.amount, null)
@@ -293,6 +315,29 @@ object WarehouseService {
         }
     }
 
+    fun savePageCategory(owner: UUID, page: Int, force: Boolean = false): Boolean {
+        if (!available) {
+            return false
+        }
+        val key = PageKey(owner, page)
+        if (!force && key !in dirtyCategories) {
+            return true
+        }
+        val category = categoryCache[key].orEmpty()
+        return runCatching {
+            if (category.isBlank()) {
+                repository.deletePageCategory(owner, page)
+            } else {
+                repository.savePageCategory(owner, page, category)
+            }
+            dirtyCategories.remove(key)
+            true
+        }.getOrElse {
+            warning("Failed to save warehouse category ${owner}:$page - ${it.message}")
+            false
+        }
+    }
+
     fun saveOwnerPages(owner: UUID, force: Boolean = false): Int {
         if (!available) {
             return 0
@@ -321,6 +366,11 @@ object WarehouseService {
     fun saveOwnerPageRemarks(owner: UUID, force: Boolean = false): Int {
         val keys = dirtyRemarks.filter { it.owner == owner }.toList()
         return keys.count { savePageRemark(it.owner, it.page, force || it in dirtyRemarks) }
+    }
+
+    fun saveOwnerPageCategories(owner: UUID, force: Boolean = false): Int {
+        val keys = dirtyCategories.filter { it.owner == owner }.toList()
+        return keys.count { savePageCategory(it.owner, it.page, force || it in dirtyCategories) }
     }
 
     fun saveDirtyPages(force: Boolean = false): Int {
@@ -353,6 +403,11 @@ object WarehouseService {
         return keys.count { savePageRemark(it.owner, it.page, force || it in dirtyRemarks) }
     }
 
+    fun saveDirtyPageCategories(force: Boolean = false): Int {
+        val keys = dirtyCategories.toList()
+        return keys.count { savePageCategory(it.owner, it.page, force || it in dirtyCategories) }
+    }
+
     fun isPageAccessible(player: Player, page: Int): Boolean {
         return page in 1..getAccessiblePages(player)
     }
@@ -375,6 +430,19 @@ object WarehouseService {
     fun normalizePageRemark(raw: String): String {
         val plain = ChatColor.stripColor(ChatColor.translateAlternateColorCodes('&', raw)).orEmpty()
         return plain.replace(Regex("\\s+"), " ").trim().take(MAX_PAGE_REMARK_LENGTH)
+    }
+
+    /** 判断页面是否接受该物品（基于分类规则）。无分类的页面接受任何物品。 */
+    private fun isPageAcceptItem(
+        owner: UUID,
+        page: Int,
+        itemStack: ItemStack,
+        categories: Map<String, PluginConfig.WarehouseCategory>,
+    ): Boolean {
+        val categoryName = getPageCategory(owner, page)
+        if (categoryName.isBlank()) return true
+        val category = categories[categoryName] ?: return true
+        return PluginConfig.matchCategory(itemStack, category)
     }
 
     private fun storeIntoPage(
@@ -441,8 +509,10 @@ object WarehouseService {
         warehouseCache.keys.removeIf { it.owner == uuid }
         profileCache.remove(uuid)
         remarkCache.keys.removeIf { it.owner == uuid }
+        categoryCache.keys.removeIf { it.owner == uuid }
         dirtyPages.removeIf { it.owner == uuid }
         dirtyProfiles.remove(uuid)
         dirtyRemarks.removeIf { it.owner == uuid }
+        dirtyCategories.removeIf { it.owner == uuid }
     }
 }

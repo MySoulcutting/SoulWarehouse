@@ -10,6 +10,7 @@ import org.bukkit.event.player.PlayerKickEvent
 import org.bukkit.event.player.PlayerPickupItemEvent
 import org.bukkit.event.player.PlayerQuitEvent
 import taboolib.common.platform.event.SubscribeEvent
+import taboolib.module.nms.getName
 import taboolib.platform.util.sendLang
 
 object WarehouseListener {
@@ -32,8 +33,7 @@ object WarehouseListener {
         if (result.storedAmount <= 0) {
             return
         }
-        val itemName = itemEntity.itemStack.itemMeta?.displayName?.takeIf { it.isNotBlank() }
-            ?: itemEntity.itemStack.type.name
+        val itemName = itemEntity.itemStack.getName()
         player.sendLang("auto-store-message", itemName, result.storedAmount)
         // 取消原拾取流程，改为“仓库优先，背包兜底，地面保留剩余”。
         event.isCancelled = true
@@ -68,6 +68,7 @@ object WarehouseListener {
         if (PluginConfig.saveOnQuit) {
             WarehouseService.saveOwnerPages(player.uniqueId, force = true)
             WarehouseService.saveOwnerPageRemarks(player.uniqueId, force = true)
+            WarehouseService.saveOwnerPageCategories(player.uniqueId, force = true)
             WarehouseService.saveProfile(player.uniqueId, force = true)
         }
         WarehouseRemarkInputService.clear(player)

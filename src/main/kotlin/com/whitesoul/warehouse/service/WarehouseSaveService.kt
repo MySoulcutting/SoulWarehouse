@@ -19,6 +19,7 @@ object WarehouseSaveService {
             WarehouseService.saveDirtyPages()
             WarehouseService.saveDirtyProfiles()
             WarehouseService.saveDirtyPageRemarks()
+            WarehouseService.saveDirtyPageCategories()
         }
     }
 
