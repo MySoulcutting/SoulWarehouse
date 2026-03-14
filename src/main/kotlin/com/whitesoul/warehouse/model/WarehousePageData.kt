@@ -7,7 +7,7 @@ import com.whitesoul.warehouse.util.normalizeStoredItem
 import org.bukkit.inventory.ItemStack
 import java.util.UUID
 
-data class WarehousePageData(
+class WarehousePageData(
     val owner: UUID,
     val page: Int,
     val contents: Array<ItemStack?> = arrayOfNulls(SLOT_COUNT),
@@ -72,6 +72,20 @@ data class WarehousePageData(
         synchronized(lock) {
             return WarehouseSerializer.serialize(contents)
         }
+    }
+
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is WarehousePageData) return false
+        return owner == other.owner && page == other.page
+    }
+
+    override fun hashCode(): Int {
+        return 31 * owner.hashCode() + page
+    }
+
+    override fun toString(): String {
+        return "WarehousePageData(owner=$owner, page=$page, remark='$remark', category='$category')"
     }
 
     companion object {

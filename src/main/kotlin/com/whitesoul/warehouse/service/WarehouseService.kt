@@ -53,8 +53,15 @@ object WarehouseService {
     fun shutdown() {
         // 关闭前强制刷一次缓存，确保停服时不会丢最后一批未自动保存的数据。
         DebugLogger.timed("shutdown 保存全部缓存") {
-            saveDirtyPages(force = true)
-            saveDirtyProfiles(force = true)
+            val savedPages = saveDirtyPages(force = true)
+            val savedProfiles = saveDirtyProfiles(force = true)
+            val remainingPages = dirtyPages.size
+            val remainingProfiles = dirtyProfiles.size
+            if (remainingPages > 0 || remainingProfiles > 0) {
+                warning("Shutdown save incomplete! $remainingPages dirty pages and $remainingProfiles dirty profiles were NOT saved. Data may be lost.")
+            } else {
+                DebugLogger.log { "shutdown 保存完成: pages=$savedPages, profiles=$savedProfiles" }
+            }
         }
         repository.shutdown()
         available = false
@@ -62,12 +69,18 @@ object WarehouseService {
 
     fun reload() {
         // reload 先保存后清空，避免切配置时把旧缓存直接丢掉。
-        saveDirtyPages(force = true)
-        saveDirtyProfiles(force = true)
+        val savedPages = saveDirtyPages(force = true)
+        val savedProfiles = saveDirtyProfiles(force = true)
+        val remainingPages = dirtyPages.size
+        val remainingProfiles = dirtyProfiles.size
+        if (remainingPages > 0 || remainingProfiles > 0) {
+            warning("Reload save incomplete! $remainingPages dirty pages and $remainingProfiles dirty profiles were NOT saved. Keeping dirty markers for retry.")
+        }
         warehouseCache.clear()
         profileCache.clear()
-        dirtyPages.clear()
-        dirtyProfiles.clear()
+        // 只有全部保存成功才清除脏标记，否则保留让下次自动保存兜底。
+        if (remainingPages == 0) dirtyPages.clear()
+        if (remainingProfiles == 0) dirtyProfiles.clear()
         repository.shutdown()
         initialize()
     }
@@ -475,9 +488,14 @@ object WarehouseService {
 
     /** 清理指定玩家的所有缓存条目，防止离线后内存泄漏。应在保存完数据后调用。 */
     fun evictOwner(uuid: UUID) {
+        // 只有当脏数据已全部落盘后才清除缓存和脏标记，否则保留脏标记让下次自动保存兜底。
+        val hasDirtyPages = dirtyPages.any { it.owner == uuid }
+        val hasDirtyProfile = uuid in dirtyProfiles
+        if (hasDirtyPages || hasDirtyProfile) {
+            warning("evictOwner $uuid: skipping dirty data cleanup (dirtyPages=$hasDirtyPages, dirtyProfile=$hasDirtyProfile), will retry on next auto-save.")
+            return
+        }
         warehouseCache.keys.removeIf { it.owner == uuid }
         profileCache.remove(uuid)
-        dirtyPages.removeIf { it.owner == uuid }
-        dirtyProfiles.remove(uuid)
     }
 }

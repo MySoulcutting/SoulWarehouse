@@ -8,6 +8,7 @@ import com.whitesoul.warehouse.storage.entity.WarehouseProfileEntity
 import taboolib.expansion.ContainerOperator
 import taboolib.expansion.PersistentContainer
 import taboolib.expansion.persistentContainer
+import taboolib.common.platform.function.warning
 import java.util.UUID
 
 class PtcObjectWarehouseRepository : WarehouseRepository {
@@ -41,7 +42,9 @@ class PtcObjectWarehouseRepository : WarehouseRepository {
     }
 
     override fun shutdown() {
-        runCatching { container?.close() }
+        runCatching { container?.close() }.onFailure {
+            warning("Failed to close SoulWarehouse database connection: ${it.message}")
+        }
         container = null
     }
 
@@ -65,13 +68,6 @@ class PtcObjectWarehouseRepository : WarehouseRepository {
             WarehousePageEntity::class.java,
             WarehousePageEntity.idOf(uuid, page),
         )?.toPageData()
-    }
-
-    override fun loadPageUsage(uuid: UUID, page: Int): Int? {
-        return pageOperator.findOne(
-            WarehousePageEntity::class.java,
-            WarehousePageEntity.idOf(uuid, page),
-        )?.usedSlots
     }
 
     override fun savePage(pageData: WarehousePageData) {

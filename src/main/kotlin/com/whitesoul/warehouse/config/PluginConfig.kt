@@ -66,12 +66,6 @@ object PluginConfig {
     val allowShulkerBox: Boolean
         get() = config.getBoolean("warehouse.allow-shulker-box", true)
 
-    val blacklist: Set<String>
-        get() = config.getStringList("warehouse.blacklist")
-            .map { ChatColor.stripColor(ChatColor.translateAlternateColorCodes('&', it)).orEmpty().trim().uppercase() }
-            .filter { it.isNotEmpty() }
-            .toSet()
-
     val autoSave: Boolean
         get() = config.getBoolean("save.auto-save", true)
 
@@ -83,17 +77,36 @@ object PluginConfig {
 
     data class WarehouseCategory(val name: String, val lorePatterns: List<String>)
 
+    // 缓存字段，在 reload() 时重新计算，避免高频访问时反复解析配置。
+    @Volatile
+    private var cachedBlacklist: Set<String> = emptySet()
+
+    @Volatile
+    private var cachedCategories: Map<String, WarehouseCategory> = emptyMap()
+
+    val blacklist: Set<String>
+        get() = cachedBlacklist
+
     val categories: Map<String, WarehouseCategory>
-        get() {
-            val section = config.getConfigurationSection("warehouse.categories") ?: return emptyMap()
-            return section.getKeys(false).associateWith { name ->
-                val patterns = config.getStringList("warehouse.categories.$name")
-                WarehouseCategory(name, patterns)
-            }
-        }
+        get() = cachedCategories
 
     val categoryNames: List<String>
-        get() = categories.keys.toList()
+        get() = cachedCategories.keys.toList()
+
+    private fun rebuildBlacklist(): Set<String> {
+        return config.getStringList("warehouse.blacklist")
+            .map { ChatColor.stripColor(ChatColor.translateAlternateColorCodes('&', it)).orEmpty().trim().uppercase() }
+            .filter { it.isNotEmpty() }
+            .toSet()
+    }
+
+    private fun rebuildCategories(): Map<String, WarehouseCategory> {
+        val section = config.getConfigurationSection("warehouse.categories") ?: return emptyMap()
+        return section.getKeys(false).associateWith { name ->
+            val patterns = config.getStringList("warehouse.categories.$name")
+            WarehouseCategory(name, patterns)
+        }
+    }
 
     fun matchCategory(itemStack: ItemStack, category: WarehouseCategory): Boolean {
         val meta = itemStack.itemMeta ?: return false
@@ -113,5 +126,7 @@ object PluginConfig {
 
     fun reload() {
         config.reload()
+        cachedBlacklist = rebuildBlacklist()
+        cachedCategories = rebuildCategories()
     }
 }

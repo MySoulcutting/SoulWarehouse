@@ -16,7 +16,6 @@ import taboolib.common.platform.command.CommandBody
 import taboolib.common.platform.command.CommandHeader
 import taboolib.common.platform.command.mainCommand
 import taboolib.common.platform.command.subCommand
-import taboolib.expansion.createHelper
 import taboolib.platform.util.sendLang
 
 @CommandHeader(name = "warehouse", aliases = ["sw"], description = "SoulWarehouse command")
@@ -24,7 +23,6 @@ object WarehouseCommand {
 
     @CommandBody
     val main = mainCommand {
-        createHelper()
         execute<CommandSender> { sender, _, _ ->
             val player = sender as? Player ?: run {
                 sender.sendLang("player-only")
@@ -68,8 +66,10 @@ object WarehouseCommand {
             // reload 前关闭所有正在使用仓库菜单的玩家界面，避免旧缓存被菜单关闭回写覆盖新数据。
             org.bukkit.Bukkit.getOnlinePlayers().forEach { player ->
                 if (WarehouseSessionService.hasSession(player)) {
-                    WarehouseSessionService.end(player)
+                    // 先标记导航中，使 onClose 回调跳过回写；再关闭界面；最后结束 session。
+                    WarehouseSessionService.beginTransition(player)
                     player.closeInventory()
+                    WarehouseSessionService.end(player)
                 }
             }
             PluginConfig.reload()

@@ -18,8 +18,6 @@ interface WarehouseRepository {
 
     fun loadPage(uuid: UUID, page: Int): WarehousePageData?
 
-    fun loadPageUsage(uuid: UUID, page: Int): Int?
-
     fun savePage(pageData: WarehousePageData)
 
     fun savePages(pageDataList: Collection<WarehousePageData>)
