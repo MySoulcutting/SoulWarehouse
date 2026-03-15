@@ -9,13 +9,14 @@ import org.bukkit.entity.Player
 import org.bukkit.event.player.PlayerKickEvent
 import org.bukkit.event.player.PlayerPickupItemEvent
 import org.bukkit.event.player.PlayerQuitEvent
+import taboolib.common.platform.event.EventPriority
 import taboolib.common.platform.event.SubscribeEvent
 import taboolib.module.nms.getName
 import taboolib.platform.util.sendLang
 
 object WarehouseListener {
 
-    @SubscribeEvent
+    @SubscribeEvent(EventPriority.MONITOR)
     fun onPickup(event: PlayerPickupItemEvent) {
         if (event.isCancelled) {
             return
