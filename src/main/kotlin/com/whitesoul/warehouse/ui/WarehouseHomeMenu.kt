@@ -18,86 +18,50 @@ object WarehouseHomeMenu {
         val profile = WarehouseService.touchProfile(player)
         val pageSize = MenuSupport.storageCapacity()
         val pageSlots = HomeUiConfig.pageSlots
-        val interactiveSlots = (pageSlots + HomeUiConfig.controlSlots).toSet()
+        val fillerChar = HomeUiConfig.filler.char
+
         player.openMenu<Chest>(HomeUiConfig.formatTitle()) {
+            map(*HomeUiConfig.layoutLines.toTypedArray())
             rows(HomeUiConfig.rows)
             handLocked(true)
             onClick(lock = true) {}
 
-            repeat(HomeUiConfig.rows * 9) { slot ->
-                if (slot !in interactiveSlots) {
-                    set(slot, HomeUiConfig.filler.buildItem(fallbackMaterial = org.bukkit.Material.STAINED_GLASS_PANE))
-                }
+            // 填充物
+            set(fillerChar, HomeUiConfig.filler.buildItem(fallbackMaterial = org.bukkit.Material.STAINED_GLASS_PANE))
+
+            // 使用说明
+            set(HomeUiConfig.helpButton.char, HomeUiConfig.helpButton.buildItem(fallbackMaterial = org.bukkit.Material.BOOK)) {
+                isCancelled = true
             }
 
-            pageSlots.forEachIndexed { index, slot ->
-                val page = index + 1
-                if (page <= profile.maxPages) {
-                    val used = WarehouseService.getPageUsedSlots(player.uniqueId, page, pageSize)
-                    val remark = WarehouseService.getPageRemark(player.uniqueId, page)
-                    val category = WarehouseService.getPageCategory(player.uniqueId, page).ifBlank { "默认" }
-                    set(
-                        slot,
-                        HomeUiConfig.pageItem.buildItem(
-                            placeholders = mapOf(
-                                "page" to page,
-                                "used" to used,
-                                "page_size" to pageSize,
-                                "max_pages" to profile.maxPages,
-                                "remark" to remark,
-                                "category" to category,
-                            ),
-                            skipBlankKeys = setOf("remark"),
-                            fallbackMaterial = org.bukkit.Material.CHEST,
-                        ),
-                    ) {
-                        isCancelled = true
-                        val click = clickEventOrNull()?.click
-                        when {
-                            // Shift+右键打开分类选择菜单
-                            click == ClickType.SHIFT_RIGHT -> {
-                                MenuSupport.reopen(clicker) {
-                                    WarehouseCategoryMenu.open(player, page)
-                                }
-                            }
-                            // 右键进入聊天备注编辑
-                            click?.isRightClick == true -> {
-                                WarehouseRemarkInputService.begin(player, page)
-                            }
-                            // 左键进入仓库页
-                            else -> {
-                                MenuSupport.reopen(clicker) {
-                                    WarehousePageMenu.openSelf(player, page)
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    set(
-                        slot,
-                        HomeUiConfig.lockedPageItem.buildItem(
-                            placeholders = mapOf("page" to page),
-                            fallbackMaterial = org.bukkit.Material.BARRIER,
-                        ),
-                    ) {
-                        isCancelled = true
-                        player.sendLang("page-locked", page)
-                    }
-                }
-            }
-
+            // 仓库信息
             set(
-                HomeUiConfig.helpButton.slot!!,
-                HomeUiConfig.helpButton.buildItem(fallbackMaterial = org.bukkit.Material.BOOK),
+                HomeUiConfig.profileButton.char,
+                HomeUiConfig.profileButton.buildItem(
+                    placeholders = mapOf("max_pages" to profile.maxPages, "page_size" to pageSize),
+                    fallbackMaterial = org.bukkit.Material.PAPER,
+                ),
             ) {
                 isCancelled = true
             }
 
-            // 自动拾取入仓开关按钮
+            // 刷新界面
+            set(HomeUiConfig.refreshButton.char, HomeUiConfig.refreshButton.buildItem(fallbackMaterial = org.bukkit.Material.COMPASS)) {
+                isCancelled = true
+                MenuSupport.reopen(clicker) { openSelf(player) }
+            }
+
+            // 关闭菜单
+            set(HomeUiConfig.closeButton.char, HomeUiConfig.closeButton.buildItem(fallbackMaterial = org.bukkit.Material.BARRIER)) {
+                isCancelled = true
+                clicker.closeInventory()
+            }
+
+            // 自动拾取入仓开关
             val autoPickup = profile.autoPickup
             val statusText = if (autoPickup) "&a已开启" else "&c已关闭"
             set(
-                HomeUiConfig.autoPickupButton.slot!!,
+                HomeUiConfig.autoPickupButton.char,
                 HomeUiConfig.autoPickupButton.buildItem(
                     placeholders = mapOf("status" to statusText),
                     fallbackMaterial = org.bukkit.Material.HOPPER,
@@ -105,45 +69,63 @@ object WarehouseHomeMenu {
             ) {
                 isCancelled = true
                 val newState = WarehouseService.toggleAutoPickup(player)
-                if (newState) {
-                    player.sendLang("auto-pickup-enabled")
-                } else {
-                    player.sendLang("auto-pickup-disabled")
-                }
-                MenuSupport.reopen(clicker) {
-                    openSelf(player)
+                if (newState) player.sendLang("auto-pickup-enabled") else player.sendLang("auto-pickup-disabled")
+                MenuSupport.reopen(clicker) { openSelf(player) }
+            }
+
+            // 仓库页槽位 — 通过 onBuild 动态填充（因为每个 P 槽位内容不同）
+            onBuild { _, inventory ->
+                pageSlots.forEachIndexed { index, slot ->
+                    val page = index + 1
+                    if (page <= profile.maxPages) {
+                        val used = WarehouseService.getPageUsedSlots(player.uniqueId, page, pageSize)
+                        val remark = WarehouseService.getPageRemark(player.uniqueId, page)
+                        val category = WarehouseService.getPageCategory(player.uniqueId, page).ifBlank { "默认" }
+                        inventory.setItem(
+                            slot,
+                            HomeUiConfig.pageItem.buildItem(
+                                placeholders = mapOf(
+                                    "page" to page, "used" to used, "page_size" to pageSize,
+                                    "max_pages" to profile.maxPages, "remark" to remark, "category" to category,
+                                ),
+                                skipBlankKeys = setOf("remark"),
+                                fallbackMaterial = org.bukkit.Material.CHEST,
+                            ),
+                        )
+                    } else {
+                        inventory.setItem(
+                            slot,
+                            HomeUiConfig.lockedPageItem.buildItem(
+                                placeholders = mapOf("page" to page),
+                                fallbackMaterial = org.bukkit.Material.BARRIER,
+                            ),
+                        )
+                    }
                 }
             }
 
-            set(
-                HomeUiConfig.profileButton.slot!!,
-                HomeUiConfig.profileButton.buildItem(
-                    placeholders = mapOf(
-                        "max_pages" to profile.maxPages,
-                        "page_size" to pageSize,
-                    ),
-                    fallbackMaterial = org.bukkit.Material.PAPER,
-                ),
-            ) {
-                isCancelled = true
-            }
-
-            set(
-                HomeUiConfig.refreshButton.slot!!,
-                HomeUiConfig.refreshButton.buildItem(fallbackMaterial = org.bukkit.Material.COMPASS),
-            ) {
-                isCancelled = true
-                MenuSupport.reopen(clicker) {
-                    openSelf(player)
+            // 页面槽位点击事件 — 通过 slot index 绑定
+            pageSlots.forEachIndexed { index, slot ->
+                val page = index + 1
+                onClick(slot) { event ->
+                    event.isCancelled = true
+                    if (page > profile.maxPages) {
+                        player.sendLang("page-locked", page)
+                        return@onClick
+                    }
+                    val click = event.clickEventOrNull()?.click
+                    when {
+                        click == ClickType.SHIFT_RIGHT -> {
+                            MenuSupport.reopen(event.clicker) { WarehouseCategoryMenu.open(player, page) }
+                        }
+                        click?.isRightClick == true -> {
+                            WarehouseRemarkInputService.begin(player, page)
+                        }
+                        else -> {
+                            MenuSupport.reopen(event.clicker) { WarehousePageMenu.openSelf(player, page) }
+                        }
+                    }
                 }
-            }
-
-            set(
-                HomeUiConfig.closeButton.slot!!,
-                HomeUiConfig.closeButton.buildItem(fallbackMaterial = org.bukkit.Material.BARRIER),
-            ) {
-                isCancelled = true
-                clicker.closeInventory()
             }
         }
     }

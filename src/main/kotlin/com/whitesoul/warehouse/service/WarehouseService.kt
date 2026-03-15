@@ -94,16 +94,7 @@ object WarehouseService {
     }
 
     fun getAccessiblePages(player: Player): Int {
-        if (player.hasPermission("soulwarehouse.page.*")) {
-            return PluginConfig.maxPages
-        }
-        var pages = PluginConfig.defaultPages
-        for (page in 1..PluginConfig.maxPages) {
-            if (player.hasPermission("soulwarehouse.page.$page")) {
-                pages = maxOf(pages, page)
-            }
-        }
-        return pages.coerceIn(1, PluginConfig.maxPages)
+        return getProfile(player).maxPages.coerceIn(1, PluginConfig.maxPages)
     }
 
     fun touchProfile(player: Player): WarehouseProfile {
@@ -112,16 +103,35 @@ object WarehouseService {
         val result = profile ?: WarehouseProfile(
             uuid = player.uniqueId,
             name = player.name,
-            maxPages = getAccessiblePages(player),
+            maxPages = PluginConfig.defaultPages,
             createdAt = now,
         )
         result.name = player.name
-        result.maxPages = getAccessiblePages(player)
         result.updatedAt = now
         result.lastOpenAt = now
         profileCache[player.uniqueId] = result
         markProfileDirty(player.uniqueId)
         return result
+    }
+
+    fun setMaxPages(uuid: UUID, pages: Int): Int {
+        val profile = getProfileByUuid(uuid)
+        profile.maxPages = pages.coerceIn(1, PluginConfig.maxPages)
+        profile.updatedAt = System.currentTimeMillis()
+        markProfileDirty(uuid)
+        return profile.maxPages
+    }
+
+    fun addMaxPages(uuid: UUID, amount: Int): Int {
+        val profile = getProfileByUuid(uuid)
+        profile.maxPages = (profile.maxPages + amount).coerceIn(1, PluginConfig.maxPages)
+        profile.updatedAt = System.currentTimeMillis()
+        markProfileDirty(uuid)
+        return profile.maxPages
+    }
+
+    fun removeMaxPages(uuid: UUID, amount: Int): Int {
+        return addMaxPages(uuid, -amount)
     }
 
     fun toggleAutoPickup(player: Player): Boolean {
@@ -137,21 +147,25 @@ object WarehouseService {
     }
 
     fun getProfile(player: OfflinePlayer): WarehouseProfile {
-        val cached = profileCache[player.uniqueId]
+        return getProfileByUuid(player.uniqueId, player.name ?: player.uniqueId.toString())
+    }
+
+    fun getProfileByUuid(uuid: UUID, fallbackName: String = uuid.toString()): WarehouseProfile {
+        val cached = profileCache[uuid]
         if (cached != null) {
             return cached
         }
-        val loaded = if (available) repository.loadProfile(player.uniqueId) else null
+        val loaded = if (available) repository.loadProfile(uuid) else null
         if (loaded != null) {
-            profileCache[player.uniqueId] = loaded
+            profileCache[uuid] = loaded
             return loaded
         }
         val fallback = WarehouseProfile(
-            uuid = player.uniqueId,
-            name = player.name ?: player.uniqueId.toString(),
+            uuid = uuid,
+            name = fallbackName,
             maxPages = PluginConfig.defaultPages,
         )
-        profileCache[player.uniqueId] = fallback
+        profileCache[uuid] = fallback
         return fallback
     }
 

@@ -30,10 +30,6 @@ object MenuSupport {
         return item
     }
 
-    fun filler(color: Short = 7): ItemStack {
-        return item(Material.STAINED_GLASS_PANE, " ", durability = color)
-    }
-
     fun storageCapacity(): Int {
         return PageUiConfig.storageCapacity
     }

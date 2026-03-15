@@ -25,15 +25,22 @@ object WarehousePageMenu {
         val remark = WarehouseService.getPageRemark(player.uniqueId, page)
         val activeSlots = PageUiConfig.activeStorageSlots
         val inactiveSlots = PageUiConfig.inactiveStorageSlots
-        val backgroundSlots = PageUiConfig.backgroundSlots
-        // snapshot 是本次菜单会话的唯一编辑源，关闭时统一回写到缓存页数据。
         val activeSlotIndex = activeSlots.withIndex().associate { it.value to it.index }
         val activeSlotSet = activeSlots.toSet()
+
+        val bgChar = PageUiConfig.background.char
+        val prevChar = PageUiConfig.previousButton.char
+        val nextChar = PageUiConfig.nextButton.char
+
         WarehouseSessionService.beginTransition(player, page)
         player.openMenu<StorableChest>(PageUiConfig.formatTitle(mapOf("player" to player.name, "page" to page))) {
+            map(*PageUiConfig.layoutLines.toTypedArray())
             rows(PageUiConfig.rows)
             handLocked(false)
             autoStack(true)
+
+            // 背景填充（通过 char 设置，map 会自动填充所有 B 字符位置）
+            set(bgChar, PageUiConfig.background.buildItem(fallbackMaterial = org.bukkit.Material.STAINED_GLASS_PANE))
 
             rule {
                 checkSlot { _, itemStack, slot ->
@@ -53,6 +60,7 @@ object WarehousePageMenu {
                 }
             }
 
+            // 存储区物品通过 onBuild 填充（每个槽位内容不同）
             onBuild { _, inventory ->
                 activeSlots.forEachIndexed { index, slot ->
                     inventory.setItem(slot, snapshot[index])
@@ -60,95 +68,84 @@ object WarehousePageMenu {
                 inactiveSlots.forEach { slot ->
                     inventory.setItem(slot, PageUiConfig.disabledStorage.buildItem(fallbackMaterial = org.bukkit.Material.STAINED_GLASS_PANE))
                 }
-                backgroundSlots.forEach { slot ->
-                    inventory.setItem(slot, PageUiConfig.background.buildItem(fallbackMaterial = org.bukkit.Material.STAINED_GLASS_PANE))
-                }
             }
 
-            if (page <= 1) {
-                set(PageUiConfig.previousButton.slot!!, PageUiConfig.background.buildItem(fallbackMaterial = org.bukkit.Material.STAINED_GLASS_PANE)) { isCancelled = true }
-            }
-
-            if (!(page < profile.maxPages && page < PluginConfig.maxPages)) {
-                set(PageUiConfig.nextButton.slot!!, PageUiConfig.background.buildItem(fallbackMaterial = org.bukkit.Material.STAINED_GLASS_PANE)) { isCancelled = true }
-            }
-
+            // 上一页按钮
             if (page > 1) {
                 set(
-                    PageUiConfig.previousButton.slot!!,
+                    prevChar,
                     PageUiConfig.previousButton.buildItem(
                         placeholders = mapOf("page" to (page - 1)),
                         fallbackMaterial = org.bukkit.Material.ARROW,
                     ),
-                ) {
-                    isCancelled = true
+                )
+                onClick(prevChar) {
+                    it.isCancelled = true
                     MenuSupport.persistPageContents(player.uniqueId, page, snapshot, true)
                     WarehouseSessionService.beginTransition(player, page - 1)
-                    MenuSupport.reopen(clicker) {
-                        openSelf(player, page - 1)
-                    }
+                    MenuSupport.reopen(it.clicker) { openSelf(player, page - 1) }
                 }
             }
+            // 没有上一页时，上一页按钮位置显示背景
+            if (page <= 1) {
+                set(prevChar, PageUiConfig.background.buildItem(fallbackMaterial = org.bukkit.Material.STAINED_GLASS_PANE))
+                onClick(prevChar) { it.isCancelled = true }
+            }
 
+            // 当前页信息
             set(
-                PageUiConfig.currentButton.slot!!,
+                PageUiConfig.currentButton.char,
                 PageUiConfig.currentButton.buildItem(
                     placeholders = mapOf(
-                        "page" to page,
-                        "max_pages" to profile.maxPages,
-                        "page_size" to MenuSupport.storageCapacity(),
-                        "remark" to remark,
+                        "page" to page, "max_pages" to profile.maxPages,
+                        "page_size" to MenuSupport.storageCapacity(), "remark" to remark,
                     ),
                     skipBlankKeys = setOf("remark"),
                     fallbackMaterial = org.bukkit.Material.CHEST,
                 ),
-            ) {
-                isCancelled = true
-            }
+            )
+            onClick(PageUiConfig.currentButton.char) { it.isCancelled = true }
 
-            set(
-                PageUiConfig.backButton.slot!!,
-                PageUiConfig.backButton.buildItem(fallbackMaterial = org.bukkit.Material.BOOK),
-            ) {
-                isCancelled = true
+            // 返回主页
+            set(PageUiConfig.backButton.char, PageUiConfig.backButton.buildItem(fallbackMaterial = org.bukkit.Material.BOOK))
+            onClick(PageUiConfig.backButton.char) {
+                it.isCancelled = true
                 MenuSupport.persistPageContents(player.uniqueId, page, snapshot, true)
                 WarehouseSessionService.beginTransition(player, null)
-                MenuSupport.reopen(clicker) {
-                    WarehouseHomeMenu.openSelf(player)
-                }
+                MenuSupport.reopen(it.clicker) { WarehouseHomeMenu.openSelf(player) }
             }
 
-            set(
-                PageUiConfig.closeButton.slot!!,
-                PageUiConfig.closeButton.buildItem(fallbackMaterial = org.bukkit.Material.BARRIER),
-            ) {
-                isCancelled = true
-                clicker.closeInventory()
+            // 关闭菜单
+            set(PageUiConfig.closeButton.char, PageUiConfig.closeButton.buildItem(fallbackMaterial = org.bukkit.Material.BARRIER))
+            onClick(PageUiConfig.closeButton.char) {
+                it.isCancelled = true
+                it.clicker.closeInventory()
             }
 
+            // 下一页按钮
             if (page < profile.maxPages && page < PluginConfig.maxPages) {
                 set(
-                    PageUiConfig.nextButton.slot!!,
+                    nextChar,
                     PageUiConfig.nextButton.buildItem(
                         placeholders = mapOf("page" to (page + 1)),
                         fallbackMaterial = org.bukkit.Material.ARROW,
                     ),
-                ) {
-                    isCancelled = true
+                )
+                onClick(nextChar) {
+                    it.isCancelled = true
                     MenuSupport.persistPageContents(player.uniqueId, page, snapshot, true)
                     WarehouseSessionService.beginTransition(player, page + 1)
-                    MenuSupport.reopen(clicker) {
-                        openSelf(player, page + 1)
-                    }
+                    MenuSupport.reopen(it.clicker) { openSelf(player, page + 1) }
                 }
+            }
+            if (!(page < profile.maxPages && page < PluginConfig.maxPages)) {
+                set(nextChar, PageUiConfig.background.buildItem(fallbackMaterial = org.bukkit.Material.STAINED_GLASS_PANE))
+                onClick(nextChar) { it.isCancelled = true }
             }
 
             onClose { event ->
                 val viewer = event.player as? Player ?: return@onClose
-                if (WarehouseSessionService.isNavigating(viewer)) {
-                    // 切页时会先 close 当前菜单，这种 close 不能当成真正退出仓库。
-                    return@onClose
-                }
+                if (WarehouseSessionService.isNavigating(viewer)) return@onClose
                 MenuSupport.persistPageContents(viewer.uniqueId, page, snapshot, true)
                 WarehouseSessionService.end(viewer)
             }

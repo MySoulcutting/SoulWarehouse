@@ -19,90 +19,87 @@ object WarehouseInspectMenu {
         val profile = WarehouseService.getProfile(target)
         val pageSize = MenuSupport.storageCapacity()
         val pageSlots = InspectHomeUiConfig.pageSlots
-        val interactiveSlots = (pageSlots + InspectHomeUiConfig.controlSlots).toSet()
+        val fillerChar = InspectHomeUiConfig.filler.char
+
         viewer.openMenu<Chest>(InspectHomeUiConfig.formatTitle(mapOf("player" to targetName, "target" to targetName))) {
+            map(*InspectHomeUiConfig.layoutLines.toTypedArray())
             rows(InspectHomeUiConfig.rows)
             handLocked(true)
             onClick(lock = true) {}
 
-            repeat(InspectHomeUiConfig.rows * 9) { slot ->
-                if (slot !in interactiveSlots) {
-                    set(slot, InspectHomeUiConfig.filler.buildItem(fallbackMaterial = org.bukkit.Material.STAINED_GLASS_PANE))
-                }
-            }
+            // 填充物
+            set(fillerChar, InspectHomeUiConfig.filler.buildItem(fallbackMaterial = org.bukkit.Material.STAINED_GLASS_PANE))
 
-            pageSlots.forEachIndexed { index, slot ->
-                val page = index + 1
-                if (WarehouseService.isInspectPageAccessible(profile, page)) {
-                    val used = WarehouseService.getPageUsedSlots(target.uniqueId, page, pageSize)
-                    val remark = WarehouseService.getPageRemark(target.uniqueId, page)
-                    val category = WarehouseService.getPageCategory(target.uniqueId, page).ifBlank { "默认" }
-                    set(
-                        slot,
-                        InspectHomeUiConfig.pageItem.buildItem(
-                            placeholders = mapOf(
-                                "page" to page,
-                                "used" to used,
-                                "page_size" to pageSize,
-                                "player" to targetName,
-                                "target" to targetName,
-                                "remark" to remark,
-                                "category" to category,
-                            ),
-                            skipBlankKeys = setOf("remark"),
-                            fallbackMaterial = org.bukkit.Material.ENDER_CHEST,
-                        ),
-                    ) {
-                        isCancelled = true
-                        MenuSupport.reopen(clicker) {
-                            openPage(viewer, target, page)
-                        }
-                    }
-                } else {
-                    set(
-                        slot,
-                        InspectHomeUiConfig.lockedPageItem.buildItem(
-                            placeholders = mapOf("page" to page),
-                            fallbackMaterial = org.bukkit.Material.BARRIER,
-                        ),
-                    ) {
-                        isCancelled = true
-                        viewer.sendLang("page-locked", page)
-                    }
-                }
-            }
-
+            // 仓库信息
             set(
-                InspectHomeUiConfig.profileButton.slot!!,
+                InspectHomeUiConfig.profileButton.char,
                 InspectHomeUiConfig.profileButton.buildItem(
                     placeholders = mapOf(
-                        "player" to targetName,
-                        "target" to targetName,
-                        "max_pages" to profile.maxPages,
-                        "page_size" to pageSize,
+                        "player" to targetName, "target" to targetName,
+                        "max_pages" to profile.maxPages, "page_size" to pageSize,
                     ),
                     fallbackMaterial = org.bukkit.Material.PAPER,
                 ),
-            ) {
-                isCancelled = true
-            }
+            )
 
+            // 只读模式
             set(
-                InspectHomeUiConfig.readonlyButton.slot!!,
+                InspectHomeUiConfig.readonlyButton.char,
                 InspectHomeUiConfig.readonlyButton.buildItem(
                     placeholders = mapOf("player" to targetName, "target" to targetName),
                     fallbackMaterial = org.bukkit.Material.BOOK,
                 ),
-            ) {
-                isCancelled = true
-            }
+            )
 
-            set(
-                InspectHomeUiConfig.closeButton.slot!!,
-                InspectHomeUiConfig.closeButton.buildItem(fallbackMaterial = org.bukkit.Material.BARRIER),
-            ) {
+            // 关闭菜单
+            set(InspectHomeUiConfig.closeButton.char, InspectHomeUiConfig.closeButton.buildItem(fallbackMaterial = org.bukkit.Material.BARRIER)) {
                 isCancelled = true
                 clicker.closeInventory()
+            }
+
+            // 仓库页槽位 — 通过 onBuild 动态填充
+            onBuild { _, inventory ->
+                pageSlots.forEachIndexed { index, slot ->
+                    val page = index + 1
+                    if (WarehouseService.isInspectPageAccessible(profile, page)) {
+                        val used = WarehouseService.getPageUsedSlots(target.uniqueId, page, pageSize)
+                        val remark = WarehouseService.getPageRemark(target.uniqueId, page)
+                        val category = WarehouseService.getPageCategory(target.uniqueId, page).ifBlank { "默认" }
+                        inventory.setItem(
+                            slot,
+                            InspectHomeUiConfig.pageItem.buildItem(
+                                placeholders = mapOf(
+                                    "page" to page, "used" to used, "page_size" to pageSize,
+                                    "player" to targetName, "target" to targetName,
+                                    "remark" to remark, "category" to category,
+                                ),
+                                skipBlankKeys = setOf("remark"),
+                                fallbackMaterial = org.bukkit.Material.ENDER_CHEST,
+                            ),
+                        )
+                    } else {
+                        inventory.setItem(
+                            slot,
+                            InspectHomeUiConfig.lockedPageItem.buildItem(
+                                placeholders = mapOf("page" to page),
+                                fallbackMaterial = org.bukkit.Material.BARRIER,
+                            ),
+                        )
+                    }
+                }
+            }
+
+            // 页面槽位点击事件
+            pageSlots.forEachIndexed { index, slot ->
+                val page = index + 1
+                onClick(slot) { event ->
+                    event.isCancelled = true
+                    if (!WarehouseService.isInspectPageAccessible(profile, page)) {
+                        viewer.sendLang("page-locked", page)
+                        return@onClick
+                    }
+                    MenuSupport.reopen(event.clicker) { openPage(viewer, target, page) }
+                }
             }
         }
     }
@@ -122,13 +119,21 @@ object WarehouseInspectMenu {
         val remark = WarehouseService.getPageRemark(target.uniqueId, page)
         val activeSlots = InspectPageUiConfig.activeStorageSlots
         val inactiveSlots = InspectPageUiConfig.inactiveStorageSlots
-        val backgroundSlots = InspectPageUiConfig.backgroundSlots
+
+        val bgChar = InspectPageUiConfig.background.char
+        val prevChar = InspectPageUiConfig.previousButton.char
+        val nextChar = InspectPageUiConfig.nextButton.char
+
         viewer.openMenu<Chest>(InspectPageUiConfig.formatTitle(mapOf("player" to targetName, "target" to targetName, "page" to page))) {
+            map(*InspectPageUiConfig.layoutLines.toTypedArray())
             rows(InspectPageUiConfig.rows)
-            handLocked(false)
-            // 只读查看页直接全局锁点击，避免遗漏 shift/数字键/双击等复杂交互。
+            handLocked(true)
             onClick(lock = true) {}
 
+            // 背景填充
+            set(bgChar, InspectPageUiConfig.background.buildItem(fallbackMaterial = org.bukkit.Material.STAINED_GLASS_PANE))
+
+            // 存储区物品通过 onBuild 填充
             onBuild { _, inventory ->
                 activeSlots.forEachIndexed { index, slot ->
                     inventory.setItem(slot, snapshot[index])
@@ -136,86 +141,63 @@ object WarehouseInspectMenu {
                 inactiveSlots.forEach { slot ->
                     inventory.setItem(slot, InspectPageUiConfig.disabledStorage.buildItem(fallbackMaterial = org.bukkit.Material.STAINED_GLASS_PANE))
                 }
-                backgroundSlots.forEach { slot ->
-                    inventory.setItem(slot, InspectPageUiConfig.background.buildItem(fallbackMaterial = org.bukkit.Material.STAINED_GLASS_PANE))
-                }
             }
 
-            if (page <= 1) {
-                set(InspectPageUiConfig.previousButton.slot!!, InspectPageUiConfig.background.buildItem(fallbackMaterial = org.bukkit.Material.STAINED_GLASS_PANE)) { isCancelled = true }
-            }
-
-            if (!(page < profile.maxPages && page < PluginConfig.maxPages)) {
-                set(InspectPageUiConfig.nextButton.slot!!, InspectPageUiConfig.background.buildItem(fallbackMaterial = org.bukkit.Material.STAINED_GLASS_PANE)) { isCancelled = true }
-            }
-
+            // 上一页
             if (page > 1) {
-                set(
-                    InspectPageUiConfig.previousButton.slot!!,
-                    InspectPageUiConfig.previousButton.buildItem(
-                        placeholders = mapOf("page" to (page - 1)),
-                        fallbackMaterial = org.bukkit.Material.ARROW,
-                    ),
-                ) {
-                    isCancelled = true
-                    MenuSupport.reopen(clicker) {
-                        openPage(viewer, target, page - 1)
-                    }
+                set(prevChar, InspectPageUiConfig.previousButton.buildItem(
+                    placeholders = mapOf("page" to (page - 1)), fallbackMaterial = org.bukkit.Material.ARROW,
+                ))
+                onClick(prevChar) {
+                    it.isCancelled = true
+                    MenuSupport.reopen(it.clicker) { openPage(viewer, target, page - 1) }
                 }
+            } else {
+                set(prevChar, InspectPageUiConfig.background.buildItem(fallbackMaterial = org.bukkit.Material.STAINED_GLASS_PANE))
             }
 
+            // 只读模式
             set(
-                InspectPageUiConfig.readonlyButton.slot!!,
+                InspectPageUiConfig.readonlyButton.char,
                 InspectPageUiConfig.readonlyButton.buildItem(
                     placeholders = mapOf(
-                        "player" to targetName,
-                        "target" to targetName,
-                        "page" to page,
-                        "max_pages" to profile.maxPages,
-                        "page_size" to MenuSupport.storageCapacity(),
-                        "remark" to remark,
+                        "player" to targetName, "target" to targetName,
+                        "page" to page, "max_pages" to profile.maxPages,
+                        "page_size" to MenuSupport.storageCapacity(), "remark" to remark,
                     ),
                     skipBlankKeys = setOf("remark"),
                     fallbackMaterial = org.bukkit.Material.BOOK,
                 ),
-            ) {
-                isCancelled = true
+            )
+
+            // 返回主页
+            set(InspectPageUiConfig.backButton.char, InspectPageUiConfig.backButton.buildItem(
+                placeholders = mapOf("player" to targetName, "target" to targetName),
+                fallbackMaterial = org.bukkit.Material.CHEST,
+            ))
+            onClick(InspectPageUiConfig.backButton.char) {
+                it.isCancelled = true
+                MenuSupport.reopen(it.clicker) { openHome(viewer, target) }
             }
 
-            set(
-                InspectPageUiConfig.backButton.slot!!,
-                InspectPageUiConfig.backButton.buildItem(
-                    placeholders = mapOf("player" to targetName, "target" to targetName),
-                    fallbackMaterial = org.bukkit.Material.CHEST,
-                ),
-            ) {
-                isCancelled = true
-                MenuSupport.reopen(clicker) {
-                    openHome(viewer, target)
-                }
+            // 关闭菜单
+            set(InspectPageUiConfig.closeButton.char, InspectPageUiConfig.closeButton.buildItem(fallbackMaterial = org.bukkit.Material.BARRIER))
+            onClick(InspectPageUiConfig.closeButton.char) {
+                it.isCancelled = true
+                it.clicker.closeInventory()
             }
 
-            set(
-                InspectPageUiConfig.closeButton.slot!!,
-                InspectPageUiConfig.closeButton.buildItem(fallbackMaterial = org.bukkit.Material.BARRIER),
-            ) {
-                isCancelled = true
-                clicker.closeInventory()
-            }
-
+            // 下一页
             if (page < profile.maxPages && page < PluginConfig.maxPages) {
-                set(
-                    InspectPageUiConfig.nextButton.slot!!,
-                    InspectPageUiConfig.nextButton.buildItem(
-                        placeholders = mapOf("page" to (page + 1)),
-                        fallbackMaterial = org.bukkit.Material.ARROW,
-                    ),
-                ) {
-                    isCancelled = true
-                    MenuSupport.reopen(clicker) {
-                        openPage(viewer, target, page + 1)
-                    }
+                set(nextChar, InspectPageUiConfig.nextButton.buildItem(
+                    placeholders = mapOf("page" to (page + 1)), fallbackMaterial = org.bukkit.Material.ARROW,
+                ))
+                onClick(nextChar) {
+                    it.isCancelled = true
+                    MenuSupport.reopen(it.clicker) { openPage(viewer, target, page + 1) }
                 }
+            } else {
+                set(nextChar, InspectPageUiConfig.background.buildItem(fallbackMaterial = org.bukkit.Material.STAINED_GLASS_PANE))
             }
         }
     }

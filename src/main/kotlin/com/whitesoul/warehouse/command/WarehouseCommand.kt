@@ -98,6 +98,71 @@ object WarehouseCommand {
         }
     }
 
+    @CommandBody
+    val page = subCommand {
+        // /warehouse page set <player> <pages>
+        literal("set") {
+            dynamic("player") {
+                suggestionUncheck<CommandSender> { _, _ -> PlayerLookup.suggestNames() }
+                dynamic("pages") {
+                    suggestionUncheck<CommandSender> { _, _ -> (1..PluginConfig.maxPages).map { it.toString() } }
+                    execute<CommandSender> { sender, ctx, pages ->
+                        handlePageModify(sender, ctx["player"], pages, "set")
+                    }
+                }
+            }
+        }
+        // /warehouse page add <player> <amount>
+        literal("add") {
+            dynamic("player") {
+                suggestionUncheck<CommandSender> { _, _ -> PlayerLookup.suggestNames() }
+                dynamic("amount") {
+                    suggestionUncheck<CommandSender> { _, _ -> listOf("1", "2", "3", "5") }
+                    execute<CommandSender> { sender, ctx, amount ->
+                        handlePageModify(sender, ctx["player"], amount, "add")
+                    }
+                }
+            }
+        }
+        // /warehouse page remove <player> <amount>
+        literal("remove") {
+            dynamic("player") {
+                suggestionUncheck<CommandSender> { _, _ -> PlayerLookup.suggestNames() }
+                dynamic("amount") {
+                    suggestionUncheck<CommandSender> { _, _ -> listOf("1", "2", "3", "5") }
+                    execute<CommandSender> { sender, ctx, amount ->
+                        handlePageModify(sender, ctx["player"], amount, "remove")
+                    }
+                }
+            }
+        }
+    }
+
+    private fun handlePageModify(sender: CommandSender, playerName: String, valueStr: String, action: String) {
+        if (!sender.hasPermission("soulwarehouse.admin.page")) {
+            sender.sendLang("no-permission")
+            return
+        }
+        val value = valueStr.toIntOrNull()
+        if (value == null || value < 0) {
+            sender.sendLang("command-page-invalid-number", valueStr)
+            return
+        }
+        val target = PlayerLookup.findOfflinePlayer(playerName) ?: run {
+            sender.sendLang("player-not-found", playerName)
+            return
+        }
+        val targetName = target.name ?: target.uniqueId.toString()
+        val result = when (action) {
+            "set" -> WarehouseService.setMaxPages(target.uniqueId, value)
+            "add" -> WarehouseService.addMaxPages(target.uniqueId, value)
+            "remove" -> WarehouseService.removeMaxPages(target.uniqueId, value)
+            else -> return
+        }
+        WarehouseService.saveProfile(target.uniqueId, force = true)
+        sender.sendLang("command-page-$action", targetName, result)
+    }
+
     private fun handleOpen(sender: CommandSender, target: String, pageArg: String?) {
         val player = sender as? Player ?: run {
             sender.sendLang("player-only")

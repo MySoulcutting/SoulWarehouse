@@ -1,12 +1,22 @@
 # 管理员查看别人仓库页
 # 可用占位符：{player} {target} {page} {max_pages} {page_size} {remark}
+#
+# 布局字符说明：
+#   S = 存储槽位  B = 背景填充
+#   < = 上一页  > = 下一页  O = 只读模式  K = 返回主页  X = 关闭菜单
 
 title: "&8查看仓库 - {player} - 第 {page} 页"
-rows: 6
-storage-slots: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44]
+layout:
+  - "SSSSSSSSS"
+  - "SSSSSSSSS"
+  - "SSSSSSSSS"
+  - "SSSSSSSSS"
+  - "SSSSSSSSS"
+  - "< B B O K X B B >"
 
 items:
   background:
+    char: "B"
     material: STAINED_GLASS_PANE
     name: " "
     durability: 7
@@ -19,14 +29,14 @@ items:
       - "&7当前布局未显示这个槽位"
 
   previous:
-    slot: 45
+    char: "<"
     material: ARROW
     name: "&e上一页"
     lore:
       - "&7前往第 &f{page} &7页"
 
   readonly:
-    slot: 48
+    char: "O"
     material: BOOK
     name: "&b只读模式"
     lore:
@@ -37,21 +47,21 @@ items:
       - "&c管理员查看模式不可修改物品"
 
   back:
-    slot: 49
+    char: "K"
     material: CHEST
     name: "&e返回主页"
     lore:
       - "&7返回仓库页选择界面"
 
   close:
-    slot: 50
+    char: "X"
     material: BARRIER
     name: "&c关闭菜单"
     lore:
       - "&7关闭当前仓库界面"
 
   next:
-    slot: 53
+    char: ">"
     material: ARROW
     name: "&e下一页"
     lore:
