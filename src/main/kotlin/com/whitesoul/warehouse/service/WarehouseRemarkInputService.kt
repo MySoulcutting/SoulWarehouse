@@ -3,6 +3,7 @@ package com.whitesoul.warehouse.service
 import com.whitesoul.warehouse.ui.WarehouseHomeMenu
 import org.bukkit.entity.Player
 import taboolib.common.platform.function.submit
+import taboolib.common.platform.function.submitAsync
 import taboolib.platform.util.asLangText
 import taboolib.platform.util.asLangTextList
 import taboolib.platform.util.sendLang
@@ -37,7 +38,7 @@ object WarehouseRemarkInputService {
                 if (remark.isBlank()) {
                     clearRemark(player, pending)
                 } else {
-                    WarehouseService.savePage(pending.owner, pending.page, force = true)
+                    submitAsync { WarehouseService.savePage(pending.owner, pending.page, force = true) }
                     player.sendLang("remark-input-saved", pending.page, remark)
                 }
             }
@@ -60,7 +61,7 @@ object WarehouseRemarkInputService {
 
     private fun clearRemark(player: Player, pending: PendingRemarkInput) {
         WarehouseService.updatePageRemark(pending.owner, pending.page, "")
-        WarehouseService.savePage(pending.owner, pending.page, force = true)
+        submitAsync { WarehouseService.savePage(pending.owner, pending.page, force = true) }
         player.sendLang("remark-input-cleared", pending.page)
     }
 

@@ -8,6 +8,7 @@ import org.bukkit.Material
 import org.bukkit.entity.Player
 import org.bukkit.inventory.ItemStack
 import taboolib.common.platform.function.submit
+import taboolib.common.platform.function.submitAsync
 import java.util.UUID
 
 object MenuSupport {
@@ -38,7 +39,7 @@ object MenuSupport {
         val changed = WarehouseService.updatePageContents(owner, page, contents, PageUiConfig.storageCapacity)
         DebugLogger.log { "persistPageContents owner=$owner, page=$page, changed=$changed, save=$save" }
         if (save) {
-            WarehouseService.savePage(owner, page)
+            submitAsync { WarehouseService.savePage(owner, page) }
         }
     }
 

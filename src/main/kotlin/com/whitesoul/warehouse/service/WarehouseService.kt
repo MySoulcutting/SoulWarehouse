@@ -179,6 +179,23 @@ object WarehouseService {
         }
     }
 
+    /**
+     * 预热指定玩家的 profile 和所有可访问页面到缓存。
+     * 应在异步线程调用，避免阻塞主线程。
+     */
+    fun preloadOwner(uuid: UUID) {
+        if (!available) return
+        DebugLogger.timed("preloadOwner uuid=$uuid") {
+            // 预热 profile
+            getProfileByUuid(uuid)
+            // 预热所有页面
+            val maxPages = profileCache[uuid]?.maxPages?.coerceIn(1, PluginConfig.maxPages) ?: PluginConfig.defaultPages
+            for (page in 1..maxPages) {
+                getOrLoadPage(uuid, page)
+            }
+        }
+    }
+
     fun snapshotPageContents(owner: UUID, page: Int): Array<ItemStack?> {
         return getOrLoadPage(owner, page).snapshotContents()
     }
@@ -228,25 +245,44 @@ object WarehouseService {
         var remainingAmount = normalized.amount
         val accessiblePages = getAccessiblePages(player)
         val categories = PluginConfig.categories
-        // 先补满已有堆叠，再尝试占用空格，能最大化压缩仓库空间。
+
+        // 将页面分为两组：有匹配分类的页面优先，无分类的页面兜底。
+        val categorizedPages = mutableListOf<Int>()
+        val uncategorizedPages = mutableListOf<Int>()
         for (page in 1..accessiblePages) {
-            if (!isPageAcceptItem(player.uniqueId, page, normalized, categories)) continue
-            remainingAmount = storeIntoPage(player.uniqueId, page, normalized, remainingAmount, size, mergeOnly = true)
-            if (remainingAmount <= 0) {
-                val elapsed = (System.nanoTime() - start) / 1_000_000.0
-                DebugLogger.log { "storeItem 完成(合并): player=${player.name}, item=${normalized.type.name}, amount=${normalized.amount}, elapsed=${String.format("%.2f", elapsed)}ms" }
-                return StoreItemResult(normalized.amount, null)
+            val categoryName = getPageCategory(player.uniqueId, page)
+            if (categoryName.isBlank()) {
+                uncategorizedPages += page
+            } else {
+                val category = categories[categoryName] ?: continue
+                if (PluginConfig.matchCategory(normalized, category)) {
+                    categorizedPages += page
+                }
+                // 有分类但不匹配的页面直接跳过
             }
         }
-        for (page in 1..accessiblePages) {
-            if (!isPageAcceptItem(player.uniqueId, page, normalized, categories)) continue
-            remainingAmount = storeIntoPage(player.uniqueId, page, normalized, remainingAmount, size, mergeOnly = false)
-            if (remainingAmount <= 0) {
-                val elapsed = (System.nanoTime() - start) / 1_000_000.0
-                DebugLogger.log { "storeItem 完成(新槽): player=${player.name}, item=${normalized.type.name}, amount=${normalized.amount}, elapsed=${String.format("%.2f", elapsed)}ms" }
-                return StoreItemResult(normalized.amount, null)
+
+        // 4 阶段入仓：分类页合并 → 分类页空槽 → 默认页合并 → 默认页空槽
+        val orderedPages = listOf(categorizedPages, uncategorizedPages)
+        for (pages in orderedPages) {
+            for (page in pages) {
+                remainingAmount = storeIntoPage(player.uniqueId, page, normalized, remainingAmount, size, mergeOnly = true)
+                if (remainingAmount <= 0) {
+                    val elapsed = (System.nanoTime() - start) / 1_000_000.0
+                    DebugLogger.log { "storeItem 完成(合并): player=${player.name}, item=${normalized.type.name}, amount=${normalized.amount}, elapsed=${String.format("%.2f", elapsed)}ms" }
+                    return StoreItemResult(normalized.amount, null)
+                }
+            }
+            for (page in pages) {
+                remainingAmount = storeIntoPage(player.uniqueId, page, normalized, remainingAmount, size, mergeOnly = false)
+                if (remainingAmount <= 0) {
+                    val elapsed = (System.nanoTime() - start) / 1_000_000.0
+                    DebugLogger.log { "storeItem 完成(新槽): player=${player.name}, item=${normalized.type.name}, amount=${normalized.amount}, elapsed=${String.format("%.2f", elapsed)}ms" }
+                    return StoreItemResult(normalized.amount, null)
+                }
             }
         }
+
         val storedAmount = normalized.amount - remainingAmount
         val elapsed = (System.nanoTime() - start) / 1_000_000.0
         DebugLogger.log { "storeItem 部分存入: player=${player.name}, item=${normalized.type.name}, stored=$storedAmount, remaining=$remainingAmount, elapsed=${String.format("%.2f", elapsed)}ms" }
@@ -426,19 +462,6 @@ object WarehouseService {
     fun normalizePageRemark(raw: String): String {
         val plain = ChatColor.stripColor(ChatColor.translateAlternateColorCodes('&', raw)).orEmpty()
         return plain.replace(Regex("\\s+"), " ").trim().take(MAX_PAGE_REMARK_LENGTH)
-    }
-
-    /** 判断页面是否接受该物品（基于分类规则）。无分类的页面接受任何物品。 */
-    private fun isPageAcceptItem(
-        owner: UUID,
-        page: Int,
-        itemStack: ItemStack,
-        categories: Map<String, PluginConfig.WarehouseCategory>,
-    ): Boolean {
-        val categoryName = getPageCategory(owner, page)
-        if (categoryName.isBlank()) return true
-        val category = categories[categoryName] ?: return true
-        return PluginConfig.matchCategory(itemStack, category)
     }
 
     private fun storeIntoPage(

@@ -16,6 +16,8 @@ import taboolib.common.platform.command.CommandBody
 import taboolib.common.platform.command.CommandHeader
 import taboolib.common.platform.command.mainCommand
 import taboolib.common.platform.command.subCommand
+import taboolib.common.platform.function.submit
+import taboolib.common.platform.function.submitAsync
 import taboolib.platform.util.sendLang
 
 @CommandHeader(name = "warehouse", aliases = ["sw"], description = "SoulWarehouse command")
@@ -66,7 +68,6 @@ object WarehouseCommand {
             // reload 前关闭所有正在使用仓库菜单的玩家界面，避免旧缓存被菜单关闭回写覆盖新数据。
             org.bukkit.Bukkit.getOnlinePlayers().forEach { player ->
                 if (WarehouseSessionService.hasSession(player)) {
-                    // 先标记导航中，使 onClose 回调跳过回写；再关闭界面；最后结束 session。
                     WarehouseSessionService.beginTransition(player)
                     player.closeInventory()
                     WarehouseSessionService.end(player)
@@ -75,12 +76,17 @@ object WarehouseCommand {
             PluginConfig.reload()
             WarehouseUiConfigs.reload()
             PluginLang.reload()
-            WarehouseService.reload()
-            WarehouseSaveService.restart()
-            if (WarehouseService.isAvailable()) {
-                sender.sendLang("command-reload-done")
-            } else {
-                sender.sendLang("storage-unavailable", WarehouseService.getLastError() ?: "unknown")
+            // 数据库 reload（含保存+关闭+重连）放到异步，完成后回主线程通知。
+            submitAsync {
+                WarehouseService.reload()
+                WarehouseSaveService.restart()
+                submit {
+                    if (WarehouseService.isAvailable()) {
+                        sender.sendLang("command-reload-done")
+                    } else {
+                        sender.sendLang("storage-unavailable", WarehouseService.getLastError() ?: "unknown")
+                    }
+                }
             }
         }
     }
@@ -92,9 +98,11 @@ object WarehouseCommand {
                 sender.sendLang("no-permission")
                 return@execute
             }
-            val saved = WarehouseService.saveDirtyPages(force = true)
-            WarehouseService.saveDirtyProfiles(force = true)
-            sender.sendLang("command-saveall-done", saved)
+            submitAsync {
+                val saved = WarehouseService.saveDirtyPages(force = true)
+                WarehouseService.saveDirtyProfiles(force = true)
+                submit { sender.sendLang("command-saveall-done", saved) }
+            }
         }
     }
 
@@ -159,7 +167,7 @@ object WarehouseCommand {
             "remove" -> WarehouseService.removeMaxPages(target.uniqueId, value)
             else -> return
         }
-        WarehouseService.saveProfile(target.uniqueId, force = true)
+        submitAsync { WarehouseService.saveProfile(target.uniqueId, force = true) }
         sender.sendLang("command-page-$action", targetName, result)
     }
 

@@ -6,15 +6,27 @@ import com.whitesoul.warehouse.service.WarehouseSessionService
 import com.whitesoul.warehouse.ui.PageUiConfig
 import com.whitesoul.warehouse.util.DebugLogger
 import org.bukkit.entity.Player
+import org.bukkit.event.player.PlayerJoinEvent
 import org.bukkit.event.player.PlayerKickEvent
 import org.bukkit.event.player.PlayerPickupItemEvent
 import org.bukkit.event.player.PlayerQuitEvent
 import taboolib.common.platform.event.EventPriority
 import taboolib.common.platform.event.SubscribeEvent
+import taboolib.common.platform.function.submitAsync
 import taboolib.module.nms.getName
 import taboolib.platform.util.sendLang
 
 object WarehouseListener {
+
+    @SubscribeEvent
+    fun onJoin(event: PlayerJoinEvent) {
+        val player = event.player
+        if (!WarehouseService.isAvailable() || !player.hasPermission("soulwarehouse.use")) return
+        // 异步预热缓存，避免后续自动拾取/打开菜单时在主线程触发数据库 IO。
+        submitAsync {
+            WarehouseService.preloadOwner(player.uniqueId)
+        }
+    }
 
     @SubscribeEvent(EventPriority.MONITOR)
     fun onPickup(event: PlayerPickupItemEvent) {

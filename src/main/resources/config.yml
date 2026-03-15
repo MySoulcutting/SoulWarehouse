@@ -24,7 +24,7 @@ warehouse:
   # 玩家默认拥有的页数，不能大于 max-pages
   default-pages: 3
 
-  # 仓库最大页数，当前插件支持 1-10 页
+  # 仓库最大页数
   max-pages: 10
 
   # 每页最多可用的逻辑仓库槽位数，最终容量还会受 ui/page.yml 的 storage-slots 数量影响
