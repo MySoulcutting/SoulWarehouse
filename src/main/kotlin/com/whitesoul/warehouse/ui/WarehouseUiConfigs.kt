@@ -15,6 +15,7 @@ object WarehouseUiConfigs {
         InspectHomeUiConfig.reload()
         PageUiConfig.reload()
         InspectPageUiConfig.reload()
+        CategoryUiConfig.reload()
     }
 }
 
@@ -476,6 +477,92 @@ object InspectPageUiConfig {
     val activeStorageSlots: List<Int> get() = layout().activeStorageSlots
     val inactiveStorageSlots: List<Int> get() = layout().inactiveStorageSlots
     val displayCapacity: Int get() = layout().displayCapacity
+
+    fun reload() {
+        config.reload()
+        cached = null
+    }
+
+    fun formatTitle(placeholders: Map<String, Any?> = emptyMap()): String {
+        return UiConfigSupport.formatText(title, placeholders)
+    }
+}
+
+// ============================================================
+// Category 菜单配置
+// ============================================================
+
+@Inject
+object CategoryUiConfig {
+
+    @Config("ui/category.yml")
+    lateinit var config: Configuration
+
+    private val defaultLayout = listOf(
+        "CCCCCCCCC",
+        "CCCCCCCCC",
+        "CCCCCCCCC",
+    )
+
+    private data class CachedLayout(
+        val title: String,
+        val layout: List<String>,
+        val maxRows: Int,
+        val filler: UiItemTemplate,
+        val defaultCategoryItem: UiItemTemplate,
+        val defaultCategoryCurrentName: String,
+        val categoryItem: UiItemTemplate,
+        val categoryCurrentName: String,
+        val patternLine: String,
+        val categorySlots: List<Int>,
+    )
+
+    @Volatile
+    private var cached: CachedLayout? = null
+
+    private fun computeLayout(): CachedLayout {
+        val title = config.getString("title", "&8设置第 {page} 页分类") ?: "&8设置第 {page} 页分类"
+        val layout = UiConfigSupport.readLayout(config, "layout", defaultLayout)
+        val maxRows = layout.size.coerceIn(1, 6)
+
+        val filler = UiConfigSupport.readItem(config, "items.filler",
+            UiItemTemplate(char = 'F', material = Material.STAINED_GLASS_PANE.name, name = " ", durability = 7))
+
+        val defaultCategoryItem = UiConfigSupport.readItem(config, "items.default-category",
+            UiItemTemplate(material = Material.BARRIER.name, name = "&e默认分类"))
+        val defaultCategoryCurrentName = config.getString("items.default-category.name-current", "&a✔ 默认分类（当前）")
+            ?: "&a✔ 默认分类（当前）"
+
+        val categoryItem = UiConfigSupport.readItem(config, "items.category",
+            UiItemTemplate(material = Material.NAME_TAG.name, name = "&e{category}"))
+        val categoryCurrentName = config.getString("items.category.name-current", "&a✔ {category}（当前）")
+            ?: "&a✔ {category}（当前）"
+
+        val patternLine = config.getString("items.pattern-line", "  &8- &f{pattern}") ?: "  &8- &f{pattern}"
+
+        val categorySlots = UiConfigSupport.slotsOf(layout, 'C')
+
+        return CachedLayout(
+            title = title, layout = layout, maxRows = maxRows,
+            filler = filler,
+            defaultCategoryItem = defaultCategoryItem, defaultCategoryCurrentName = defaultCategoryCurrentName,
+            categoryItem = categoryItem, categoryCurrentName = categoryCurrentName,
+            patternLine = patternLine, categorySlots = categorySlots,
+        )
+    }
+
+    private fun layout(): CachedLayout = cached ?: computeLayout().also { cached = it }
+
+    val title: String get() = layout().title
+    val layoutLines: List<String> get() = layout().layout
+    val maxRows: Int get() = layout().maxRows
+    val filler: UiItemTemplate get() = layout().filler
+    val defaultCategoryItem: UiItemTemplate get() = layout().defaultCategoryItem
+    val defaultCategoryCurrentName: String get() = layout().defaultCategoryCurrentName
+    val categoryItem: UiItemTemplate get() = layout().categoryItem
+    val categoryCurrentName: String get() = layout().categoryCurrentName
+    val patternLine: String get() = layout().patternLine
+    val categorySlots: List<Int> get() = layout().categorySlots
 
     fun reload() {
         config.reload()

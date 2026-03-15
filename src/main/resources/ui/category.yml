@@ -1,0 +1,38 @@
+# 分类选择菜单
+# 可用占位符：{page} {category} {patterns}
+# {patterns} 会被替换为分类的匹配规则列表
+#
+# 布局字符说明：
+#   C = 分类槽位（动态填充）  F = 填充物
+# 注意：分类数量是动态的，行数会根据分类数量自动调整（最少 1 行，最多 6 行）
+# 如果分类数量超过 C 槽位数量，多余的分类会被截断
+
+title: "&8设置第 {page} 页分类"
+layout:
+  - "CCCCCCCCC"
+  - "CCCCCCCCC"
+  - "CCCCCCCCC"
+
+items:
+  filler:
+    char: "F"
+    material: STAINED_GLASS_PANE
+    name: " "
+    durability: 7
+
+  default-category:
+    material: BARRIER
+    name: "&e默认分类"
+    name-current: "&a✔ 默认分类（当前）"
+    lore:
+      - "&7清除分类限制，允许任何物品自动入仓"
+
+  category:
+    material: NAME_TAG
+    name: "&e{category}"
+    name-current: "&a✔ {category}（当前）"
+    lore:
+      - "&7自动入仓时仅接受匹配此分类的物品"
+      - "&7匹配规则："
+
+  pattern-line: "  &8- &f{pattern}"
