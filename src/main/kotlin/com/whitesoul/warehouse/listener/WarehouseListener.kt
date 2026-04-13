@@ -1,5 +1,6 @@
 package com.whitesoul.warehouse.listener
 
+import com.whitesoul.warehouse.config.PluginConfig
 import com.whitesoul.warehouse.service.WarehouseRemarkInputService
 import com.whitesoul.warehouse.service.WarehouseService
 import com.whitesoul.warehouse.service.WarehouseSessionService
@@ -55,6 +56,9 @@ object WarehouseListener {
         }
         DebugLogger.log { "onPickup 存入: player=${player.name}, item=$itemName, stored=${result.storedAmount}, remaining=${result.remaining?.amount ?: 0}" }
         player.sendLang("auto-store-message", itemName, result.storedAmount)
+        PluginConfig.autoStoreSound?.let { sound ->
+            player.playSound(player.location, sound.sound, sound.volume, sound.pitch)
+        }
         // 取消原拾取流程，改为“仓库优先，背包兜底，地面保留剩余”。
         event.isCancelled = true
         val remaining = result.remaining

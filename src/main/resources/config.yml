@@ -33,6 +33,10 @@ warehouse:
   # 是否允许潜影盒放入仓库
   allow-shulker-box: true
 
+  # 自动入仓成功时播放的音效，留空则不播放
+  # 格式：音效名 音量 音调（如 ENTITY_ITEM_PICKUP 0.5 1.2）
+  auto-store-sound: "ENTITY_ITEM_PICKUP 0.5 1.2"
+
   # 禁止放入仓库的物品，支持材质名（如 BEDROCK）、物品显示名称和 Lore 行
   # 匹配时忽略大小写和颜色代码，Lore 任意一行命中即拦截
   blacklist:

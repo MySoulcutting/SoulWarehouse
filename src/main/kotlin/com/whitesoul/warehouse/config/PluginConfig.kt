@@ -1,6 +1,7 @@
 package com.whitesoul.warehouse.config
 
 import org.bukkit.ChatColor
+import org.bukkit.Sound
 import org.bukkit.inventory.ItemStack
 import taboolib.common.Inject
 import taboolib.expansion.dbFile
@@ -66,6 +67,33 @@ object PluginConfig {
     val allowShulkerBox: Boolean
         get() = config.getBoolean("warehouse.allow-shulker-box", true)
 
+    data class SoundConfig(val sound: Sound, val volume: Float, val pitch: Float)
+
+    @Volatile
+    private var cachedAutoStoreSound: SoundConfig? = null
+
+    @Volatile
+    private var autoStoreSoundParsed = false
+
+    val autoStoreSound: SoundConfig?
+        get() {
+            if (!autoStoreSoundParsed) {
+                cachedAutoStoreSound = parseAutoStoreSound()
+                autoStoreSoundParsed = true
+            }
+            return cachedAutoStoreSound
+        }
+
+    private fun parseAutoStoreSound(): SoundConfig? {
+        val raw = config.getString("warehouse.auto-store-sound")?.trim()
+        if (raw.isNullOrEmpty()) return null
+        val parts = raw.split("\\s+".toRegex())
+        val sound = runCatching { Sound.valueOf(parts[0].uppercase()) }.getOrNull() ?: return null
+        val volume = parts.getOrNull(1)?.toFloatOrNull() ?: 0.5f
+        val pitch = parts.getOrNull(2)?.toFloatOrNull() ?: 1.0f
+        return SoundConfig(sound, volume, pitch)
+    }
+
     val autoSave: Boolean
         get() = config.getBoolean("save.auto-save", true)
 
@@ -128,5 +156,7 @@ object PluginConfig {
         config.reload()
         cachedBlacklist = rebuildBlacklist()
         cachedCategories = rebuildCategories()
+        cachedAutoStoreSound = null
+        autoStoreSoundParsed = false
     }
 }

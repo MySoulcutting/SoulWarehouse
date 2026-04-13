@@ -18,6 +18,7 @@ import taboolib.common.platform.command.mainCommand
 import taboolib.common.platform.command.subCommand
 import taboolib.common.platform.function.submit
 import taboolib.common.platform.function.submitAsync
+import taboolib.expansion.createHelper
 import taboolib.platform.util.sendLang
 
 @CommandHeader(name = "warehouse", aliases = ["sw"], description = "SoulWarehouse command")
@@ -25,20 +26,26 @@ object WarehouseCommand {
 
     @CommandBody
     val main = mainCommand {
-        execute<CommandSender> { sender, _, _ ->
-            val player = sender as? Player ?: run {
-                sender.sendLang("player-only")
-                return@execute
+       createHelper()
+    }
+    
+
+    @CommandBody(permission = "soulwarehouse.admin.open")
+    val use = subCommand {
+        dynamic("target") {
+            suggestionUncheck<CommandSender> { _, _ -> PlayerLookup.suggestNames() }
+            execute<CommandSender> { sender, _, target ->
+                val targetPlayer = PlayerLookup.findOnlinePlayer(target) ?: run {
+                    sender.sendLang("player-not-found", target)
+                    return@execute
+                }
+                WarehouseHomeMenu.openSelf(targetPlayer)
+                sender.sendLang("command-use-opened", targetPlayer.name)
             }
-            if (!player.hasPermission("soulwarehouse.use")) {
-                player.sendLang("no-permission")
-                return@execute
-            }
-            WarehouseHomeMenu.openSelf(player)
         }
     }
 
-    @CommandBody
+    @CommandBody(permission = "soulwarehouse.admin.open")
     val open = subCommand {
         dynamic("target") {
             suggestionUncheck<CommandSender> { _, _ ->
@@ -58,13 +65,9 @@ object WarehouseCommand {
         }
     }
 
-    @CommandBody
+    @CommandBody(permission = "soulwarehouse.admin.reload")
     val reload = subCommand {
         execute<CommandSender> { sender, _, _ ->
-            if (!sender.hasPermission("soulwarehouse.admin.reload")) {
-                sender.sendLang("no-permission")
-                return@execute
-            }
             // reload 前关闭所有正在使用仓库菜单的玩家界面，避免旧缓存被菜单关闭回写覆盖新数据。
             org.bukkit.Bukkit.getOnlinePlayers().forEach { player ->
                 if (WarehouseSessionService.hasSession(player)) {
@@ -91,13 +94,9 @@ object WarehouseCommand {
         }
     }
 
-    @CommandBody
+    @CommandBody(permission = "soulwarehouse.admin.saveall")
     val saveall = subCommand {
         execute<CommandSender> { sender, _, _ ->
-            if (!sender.hasPermission("soulwarehouse.admin.saveall")) {
-                sender.sendLang("no-permission")
-                return@execute
-            }
             submitAsync {
                 val saved = WarehouseService.saveDirtyPages(force = true)
                 WarehouseService.saveDirtyProfiles(force = true)
@@ -106,7 +105,7 @@ object WarehouseCommand {
         }
     }
 
-    @CommandBody
+    @CommandBody(permission = "soulwarehouse.admin.page")
     val page = subCommand {
         // /warehouse page set <player> <pages>
         literal("set") {
@@ -147,10 +146,6 @@ object WarehouseCommand {
     }
 
     private fun handlePageModify(sender: CommandSender, playerName: String, valueStr: String, action: String) {
-        if (!sender.hasPermission("soulwarehouse.admin.page")) {
-            sender.sendLang("no-permission")
-            return
-        }
         val value = valueStr.toIntOrNull()
         if (value == null || value < 0) {
             sender.sendLang("command-page-invalid-number", valueStr)
@@ -177,7 +172,7 @@ object WarehouseCommand {
             return
         }
         if (pageArg == null) {
-            // open 只有一个参数时，优先按“打开自己的某一页”解析；失败后再视为管理员查看玩家。
+            // open 只有一个参数时，优先按"打开自己的某一页"解析；失败后再视为管理员查看玩家。
             val selfPage = target.toIntOrNull()
             if (selfPage != null) {
                 if (!player.hasPermission("soulwarehouse.use")) {
@@ -188,19 +183,11 @@ object WarehouseCommand {
                 WarehousePageMenu.openSelf(player, page)
                 return
             }
-            if (!player.hasPermission("soulwarehouse.admin.open")) {
-                player.sendLang("no-permission")
-                return
-            }
             val targetPlayer = PlayerLookup.findOfflinePlayer(target) ?: run {
                 player.sendLang("player-not-found", target)
                 return
             }
             WarehouseInspectMenu.openHome(player, targetPlayer)
-            return
-        }
-        if (!player.hasPermission("soulwarehouse.admin.open")) {
-            player.sendLang("no-permission")
             return
         }
         val page = parsePage(player, pageArg) ?: return

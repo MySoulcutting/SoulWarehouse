@@ -2,6 +2,7 @@ package com.whitesoul.warehouse.util
 
 import org.bukkit.Bukkit
 import org.bukkit.OfflinePlayer
+import org.bukkit.entity.Player
 
 object PlayerLookup {
 
@@ -12,6 +13,10 @@ object PlayerLookup {
         @Suppress("DEPRECATION")
         val offline = Bukkit.getOfflinePlayer(name)
         return if (offline.hasPlayedBefore()) offline else null
+    }
+
+    fun findOnlinePlayer(name: String): Player? {
+        return Bukkit.getPlayerExact(name)
     }
 
     fun suggestNames(): List<String> {
