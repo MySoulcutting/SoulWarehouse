@@ -3,24 +3,30 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 plugins {
     java
-    id("io.izzel.taboolib") version "2.0.31"
+    id("io.izzel.taboolib") version "2.0.38"
     id("org.jetbrains.kotlin.jvm") version "1.9.22"
 }
 
 taboolib {
     env {
         // 安装模块
-        install(Basic, Bukkit, BukkitHook, BukkitUI, BukkitUtil, BukkitNMS, BukkitNMSUtil, CommandHelper, I18n, Database, PtcObject, Ptc)
+        install(Basic, Bukkit, BukkitUI, BukkitNMSUtil, CommandHelper, I18n, PtcObject, "database-postgresql")
     }
-    version { taboolib = "6.2.4-99fb800" }
+    version {
+        taboolib = "6.3.0-afd75a7"
+        skipPlatformFile = true
+    }
 }
 
 repositories {
     mavenCentral()
+    maven("https://repo.papermc.io/repository/maven-public/")
+    maven("https://repo.extendedclip.com/content/repositories/placeholderapi/")
 }
 
 dependencies {
-    compileOnly("ink.ptms.core:v11200:11200")
+    compileOnly("io.papermc.paper:paper-api:1.21.11-R0.1-SNAPSHOT")
+    compileOnly("me.clip:placeholderapi:2.11.6")
     compileOnly(kotlin("stdlib"))
     compileOnly(fileTree("libs"))
 }
@@ -31,12 +37,17 @@ tasks.withType<JavaCompile> {
 
 tasks.withType<KotlinCompile> {
     kotlinOptions {
-        jvmTarget = "1.8"
+        jvmTarget = "21"
         freeCompilerArgs = listOf("-Xjvm-default=all")
     }
 }
 
+tasks.processResources {
+    filesMatching("plugin.yml") {
+        expand("version" to project.version)
+    }
+}
+
 java {
-    sourceCompatibility = JavaVersion.VERSION_1_8
-    targetCompatibility = JavaVersion.VERSION_1_8
+    toolchain.languageVersion.set(JavaLanguageVersion.of(21))
 }

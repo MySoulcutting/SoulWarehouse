@@ -16,6 +16,10 @@ object WarehouseInspectMenu {
             return
         }
         val targetName = target.name ?: target.uniqueId.toString()
+        if (!WarehouseService.isOwnerLoaded(target.uniqueId)) {
+            MenuSupport.loadOwner(viewer, target.uniqueId, targetName) { openHome(viewer, target) }
+            return
+        }
         val profile = WarehouseService.getProfile(target)
         val pageSize = MenuSupport.storageCapacity()
         val pageSlots = InspectHomeUiConfig.pageSlots
@@ -28,7 +32,7 @@ object WarehouseInspectMenu {
             onClick(lock = true) {}
 
             // 填充物
-            set(fillerChar, InspectHomeUiConfig.filler.buildItem(fallbackMaterial = org.bukkit.Material.STAINED_GLASS_PANE))
+            set(fillerChar, InspectHomeUiConfig.filler.buildItem(fallbackMaterial = org.bukkit.Material.GRAY_STAINED_GLASS_PANE))
 
             // 仓库信息
             set(
@@ -110,6 +114,10 @@ object WarehouseInspectMenu {
             return
         }
         val targetName = target.name ?: target.uniqueId.toString()
+        if (!WarehouseService.isOwnerLoaded(target.uniqueId)) {
+            MenuSupport.loadOwner(viewer, target.uniqueId, targetName) { openPage(viewer, target, page) }
+            return
+        }
         val profile = WarehouseService.getProfile(target)
         if (!WarehouseService.isInspectPageAccessible(profile, page)) {
             viewer.sendLang("page-locked", page)
@@ -131,7 +139,7 @@ object WarehouseInspectMenu {
             onClick(lock = true) {}
 
             // 背景填充
-            set(bgChar, InspectPageUiConfig.background.buildItem(fallbackMaterial = org.bukkit.Material.STAINED_GLASS_PANE))
+            set(bgChar, InspectPageUiConfig.background.buildItem(fallbackMaterial = org.bukkit.Material.GRAY_STAINED_GLASS_PANE))
 
             // 存储区物品通过 onBuild 填充
             onBuild { _, inventory ->
@@ -139,7 +147,7 @@ object WarehouseInspectMenu {
                     inventory.setItem(slot, snapshot[index])
                 }
                 inactiveSlots.forEach { slot ->
-                    inventory.setItem(slot, InspectPageUiConfig.disabledStorage.buildItem(fallbackMaterial = org.bukkit.Material.STAINED_GLASS_PANE))
+                    inventory.setItem(slot, InspectPageUiConfig.disabledStorage.buildItem(fallbackMaterial = org.bukkit.Material.LIGHT_GRAY_STAINED_GLASS_PANE))
                 }
             }
 
@@ -153,7 +161,7 @@ object WarehouseInspectMenu {
                     MenuSupport.reopen(it.clicker) { openPage(viewer, target, page - 1) }
                 }
             } else {
-                set(prevChar, InspectPageUiConfig.background.buildItem(fallbackMaterial = org.bukkit.Material.STAINED_GLASS_PANE))
+                set(prevChar, InspectPageUiConfig.background.buildItem(fallbackMaterial = org.bukkit.Material.GRAY_STAINED_GLASS_PANE))
             }
 
             // 只读模式
@@ -197,7 +205,7 @@ object WarehouseInspectMenu {
                     MenuSupport.reopen(it.clicker) { openPage(viewer, target, page + 1) }
                 }
             } else {
-                set(nextChar, InspectPageUiConfig.background.buildItem(fallbackMaterial = org.bukkit.Material.STAINED_GLASS_PANE))
+                set(nextChar, InspectPageUiConfig.background.buildItem(fallbackMaterial = org.bukkit.Material.GRAY_STAINED_GLASS_PANE))
             }
         }
     }

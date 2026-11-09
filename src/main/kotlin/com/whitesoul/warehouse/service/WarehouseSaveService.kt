@@ -8,6 +8,7 @@ object WarehouseSaveService {
 
     private var task: PlatformExecutor.PlatformTask? = null
 
+    @Synchronized
     fun restart() {
         stop()
         if (!PluginConfig.autoSave) {
@@ -21,6 +22,7 @@ object WarehouseSaveService {
         }
     }
 
+    @Synchronized
     fun stop() {
         task?.cancel()
         task = null

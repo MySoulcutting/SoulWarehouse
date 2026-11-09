@@ -3,6 +3,7 @@ package com.whitesoul.warehouse.command
 import com.whitesoul.warehouse.config.PluginConfig
 import com.whitesoul.warehouse.config.PluginLang
 import com.whitesoul.warehouse.service.WarehouseSaveService
+import com.whitesoul.warehouse.service.WarehouseRemarkInputService
 import com.whitesoul.warehouse.service.WarehouseService
 import com.whitesoul.warehouse.service.WarehouseSessionService
 import com.whitesoul.warehouse.ui.WarehouseHomeMenu
@@ -76,18 +77,25 @@ object WarehouseCommand {
                     WarehouseSessionService.end(player)
                 }
             }
-            PluginConfig.reload()
-            WarehouseUiConfigs.reload()
-            PluginLang.reload()
-            // 数据库 reload（含保存+关闭+重连）放到异步，完成后回主线程通知。
+            val onlinePlayers = org.bukkit.Bukkit.getOnlinePlayers().map { it.uniqueId to it.name }
+            WarehouseRemarkInputService.clearAll()
+            WarehouseSaveService.stop()
+            // 保存旧缓存、加载配置和候选数据库连接在同一重载事务内完成。
             submitAsync {
-                WarehouseService.reload()
+                val result = WarehouseService.reload {
+                    PluginConfig.reload()
+                    WarehouseUiConfigs.reload()
+                    PluginLang.reload()
+                }
+                if (result.successful) {
+                    onlinePlayers.forEach { (uuid, name) -> WarehouseService.preloadOwner(uuid, name) }
+                }
                 WarehouseSaveService.restart()
                 submit {
-                    if (WarehouseService.isAvailable()) {
+                    if (result.successful) {
                         sender.sendLang("command-reload-done")
                     } else {
-                        sender.sendLang("storage-unavailable", WarehouseService.getLastError() ?: "unknown")
+                        sender.sendLang("command-reload-failed", result.error ?: "unknown")
                     }
                 }
             }
@@ -98,9 +106,18 @@ object WarehouseCommand {
     val saveall = subCommand {
         execute<CommandSender> { sender, _, _ ->
             submitAsync {
-                val saved = WarehouseService.saveDirtyPages(force = true)
-                WarehouseService.saveDirtyProfiles(force = true)
-                submit { sender.sendLang("command-saveall-done", saved) }
+                val pages = WarehouseService.saveDirtyPages(force = true)
+                val profiles = WarehouseService.saveDirtyProfiles(force = true)
+                submit {
+                    val error = pages.error ?: profiles.error
+                    if (error != null) {
+                        sender.sendLang("storage-unavailable", error)
+                    } else if (pages.successful && profiles.successful) {
+                        sender.sendLang("command-saveall-done", pages.saved, profiles.saved)
+                    } else {
+                        sender.sendLang("command-saveall-failed", pages.saved, pages.failed, profiles.saved, profiles.failed)
+                    }
+                }
             }
         }
     }
@@ -155,15 +172,29 @@ object WarehouseCommand {
             sender.sendLang("player-not-found", playerName)
             return
         }
-        val targetName = target.name ?: target.uniqueId.toString()
-        val result = when (action) {
-            "set" -> WarehouseService.setMaxPages(target.uniqueId, value)
-            "add" -> WarehouseService.addMaxPages(target.uniqueId, value)
-            "remove" -> WarehouseService.removeMaxPages(target.uniqueId, value)
-            else -> return
+        val uuid = target.uniqueId
+        val targetName = target.name ?: uuid.toString()
+        submitAsync {
+            if (!WarehouseService.preloadOwner(uuid, targetName)) {
+                val error = WarehouseService.getOwnerLoadError(uuid) ?: WarehouseService.getLastError() ?: "unknown"
+                submit { sender.sendLang("storage-unavailable", error) }
+                return@submitAsync
+            }
+            val result = when (action) {
+                "set" -> WarehouseService.setMaxPages(uuid, value)
+                "add" -> WarehouseService.addMaxPages(uuid, value)
+                "remove" -> WarehouseService.removeMaxPages(uuid, value)
+                else -> return@submitAsync
+            }
+            val saved = WarehouseService.saveProfile(uuid, force = true)
+            submit {
+                if (saved) {
+                    sender.sendLang("command-page-$action", targetName, result)
+                } else {
+                    sender.sendLang("command-page-save-failed", targetName)
+                }
+            }
         }
-        submitAsync { WarehouseService.saveProfile(target.uniqueId, force = true) }
-        sender.sendLang("command-page-$action", targetName, result)
     }
 
     private fun handleOpen(sender: CommandSender, target: String, pageArg: String?) {

@@ -18,11 +18,9 @@ class PtcObjectWarehouseRepository : WarehouseRepository {
     private val currentContainer: PersistentContainer
         get() = container ?: error("SoulWarehouse repository is not initialized.")
 
-    private val profileTableName: String
-        get() = "${PluginConfig.tablePrefix}player_profile"
+    private var profileTableName = ""
 
-    private val pageTableName: String
-        get() = "${PluginConfig.tablePrefix}player_warehouse_page"
+    private var pageTableName = ""
 
     private val profileOperator: ContainerOperator
         get() = currentContainer[profileTableName]
@@ -32,8 +30,12 @@ class PtcObjectWarehouseRepository : WarehouseRepository {
 
     override fun initialize() {
         shutdown()
+        val tablePrefix = PluginConfig.tablePrefix
+        profileTableName = "${tablePrefix}player_profile"
+        pageTableName = "${tablePrefix}player_warehouse_page"
         container = persistentContainer(
             type = PluginConfig.databaseSource(),
+            flags = PluginConfig.databaseFlags,
             ssl = PluginConfig.databaseSslMode,
         ) {
             new(WarehouseProfileEntity::class.java, profileTableName)
@@ -79,7 +81,7 @@ class PtcObjectWarehouseRepository : WarehouseRepository {
             return
         }
         val (emptyPages, nonEmptyPages) = pageDataList.partition {
-            it.countUsedSlots(WarehousePageData.SLOT_COUNT) <= 0 && it.remark.isBlank() && it.category.isBlank()
+            it.countUsedSlots(WarehousePageData.SLOT_COUNT) <= 0 && it.getRemark().isBlank() && it.getCategory().isBlank()
         }
         // 空页（无物品、无备注、无分类）直接删记录，避免数据库里堆积无用行。
         if (nonEmptyPages.isNotEmpty()) {
@@ -90,7 +92,7 @@ class PtcObjectWarehouseRepository : WarehouseRepository {
 
     override fun deletePage(uuid: UUID, page: Int) {
         val key = WarehousePageEntity().apply {
-            id = WarehousePageEntity.idOf(uuid, page)
+            pageKey = WarehousePageEntity.idOf(uuid, page)
         }
         pageOperator.deleteByKey(key)
     }

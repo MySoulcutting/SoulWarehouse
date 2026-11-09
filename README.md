@@ -15,15 +15,21 @@
 
 ## 环境要求
 
-- Java 8+
-- Minecraft 1.12+（Bukkit / Spigot / Paper）
-- TabooLib 6.2
+- Java 21
+- Paper 1.21.11
+- TabooLib 6.3
+
+## 2.0.0 兼容性
+
+`2.0.0` 仅支持 Paper 1.21.11，不支持旧版 Minecraft、Spigot 或 Folia。仓库物品数据已改用 Paper NBT 格式，不能读取 `1.x` 版本写入的旧物品数据，请使用全新数据库部署。
 
 ## 构建
 
 ```bash
 ./gradlew build
 ```
+
+构建时必须使用 JDK 21。
 
 ## 命令
 
@@ -47,6 +53,19 @@
 | `soulwarehouse.admin.open` | 查看其他玩家仓库 |
 | `soulwarehouse.admin.reload` | 重载配置 |
 | `soulwarehouse.admin.saveall` | 强制保存 |
+
+## PlaceholderAPI 变量
+
+服务器安装 PlaceholderAPI 插件后自动注册（`softdepend`，未安装不影响运行）：
+
+| 变量 | 说明 |
+|---|---|
+| `%soulwarehouse_pages%` | 玩家当前可用的仓库页数 |
+| `%soulwarehouse_limit_pages%` | 全局配置的页数上限（`warehouse.max-pages`） |
+
+- `%soulwarehouse_max_pages%` 是 `limit_pages` 的别名。注意与 UI 占位符 `{max_pages}` 语义不同：UI 里 `{max_pages}` 指玩家自己的页数。
+- 变量仅对在线玩家生效，可配合计分板、Tab 列表等使用。
+- 示例：`/papi parse me %soulwarehouse_pages%`
 
 ## 配置
 

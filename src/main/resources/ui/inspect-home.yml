@@ -18,9 +18,8 @@ layout:
 items:
   filler:
     char: "F"
-    material: STAINED_GLASS_PANE
+    material: GRAY_STAINED_GLASS_PANE
     name: " "
-    durability: 7
 
   page:
     char: "P"

@@ -2,9 +2,11 @@ package com.whitesoul.warehouse.storage.entity
 
 import com.whitesoul.warehouse.model.WarehousePageData
 import com.whitesoul.warehouse.storage.WarehouseSerializer
+import com.whitesoul.warehouse.storage.WarehouseSerializationException
 import taboolib.expansion.ColumnType
 import taboolib.expansion.Id
 import taboolib.expansion.Length
+import taboolib.expansion.UniqueKey
 import taboolib.module.database.ColumnTypePostgreSQL
 import taboolib.module.database.ColumnTypeSQL
 import taboolib.module.database.ColumnTypeSQLite
@@ -14,7 +16,8 @@ import java.util.UUID
 class WarehousePageEntity {
 
     @Id
-    var id: UUID = UUID.randomUUID()
+    @UniqueKey
+    var pageKey: UUID = UUID.randomUUID()
 
     var uuid: UUID = UUID.randomUUID()
 
@@ -38,10 +41,15 @@ class WarehousePageEntity {
     var updatedAt: Long = System.currentTimeMillis()
 
     fun toPageData(): WarehousePageData {
+        val contents = try {
+            WarehouseSerializer.deserialize(content)
+        } catch (ex: WarehouseSerializationException) {
+            throw WarehouseSerializationException("Failed to deserialize warehouse page $uuid:$page", ex)
+        }
         return WarehousePageData(
             owner = uuid,
             page = page,
-            contents = WarehouseSerializer.deserialize(content),
+            contents = contents,
             updatedAt = updatedAt,
             remark = remark,
             category = category,
@@ -57,14 +65,14 @@ class WarehousePageEntity {
 
         fun fromPageData(pageData: WarehousePageData): WarehousePageEntity {
             return WarehousePageEntity().apply {
-                id = idOf(pageData.owner, pageData.page)
+                pageKey = idOf(pageData.owner, pageData.page)
                 uuid = pageData.owner
                 page = pageData.page
                 usedSlots = pageData.countUsedSlots(WarehousePageData.SLOT_COUNT)
                 content = pageData.serializeContents()
-                updatedAt = pageData.updatedAt
-                remark = pageData.remark
-                category = pageData.category
+                updatedAt = pageData.getUpdatedAt()
+                remark = pageData.getRemark()
+                category = pageData.getCategory()
             }
         }
     }

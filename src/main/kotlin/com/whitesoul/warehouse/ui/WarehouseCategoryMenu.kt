@@ -10,6 +10,10 @@ import taboolib.platform.util.sendLang
 object WarehouseCategoryMenu {
 
     fun open(player: Player, page: Int) {
+        if (!WarehouseService.isOwnerLoaded(player.uniqueId)) {
+            MenuSupport.loadOwner(player, player.uniqueId, player.name) { open(player, page) }
+            return
+        }
         val categories = PluginConfig.categoryNames
         val currentCategory = WarehouseService.getPageCategory(player.uniqueId, page)
         // 菜单项 = "默认分类（清除）" + 所有配置的分类
@@ -31,7 +35,7 @@ object WarehouseCategoryMenu {
             onClick(lock = true) {}
 
             // 填充物
-            set(fillerChar, CategoryUiConfig.filler.buildItem(fallbackMaterial = org.bukkit.Material.STAINED_GLASS_PANE))
+            set(fillerChar, CategoryUiConfig.filler.buildItem(fallbackMaterial = org.bukkit.Material.GRAY_STAINED_GLASS_PANE))
 
             // 动态填充分类项
             onBuild { _, inventory ->
@@ -60,7 +64,6 @@ object WarehouseCategoryMenu {
                             name = UiConfigSupport.formatText(name, mapOf("category" to categoryName)),
                             lore = fullLore,
                             amount = CategoryUiConfig.categoryItem.amount,
-                            durability = CategoryUiConfig.categoryItem.durability,
                         )
                     }
                     inventory.setItem(slot, item)

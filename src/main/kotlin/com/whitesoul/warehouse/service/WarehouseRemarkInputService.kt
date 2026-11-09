@@ -38,8 +38,17 @@ object WarehouseRemarkInputService {
                 if (remark.isBlank()) {
                     clearRemark(player, pending)
                 } else {
-                    submitAsync { WarehouseService.savePage(pending.owner, pending.page, force = true) }
-                    player.sendLang("remark-input-saved", pending.page, remark)
+                    submitAsync {
+                        val saved = WarehouseService.savePage(pending.owner, pending.page, force = true)
+                        submit {
+                            if (!player.isOnline) return@submit
+                            if (saved) {
+                                player.sendLang("remark-input-saved", pending.page, remark)
+                            } else {
+                                player.sendLang("remark-input-save-failed", pending.page)
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -59,10 +68,23 @@ object WarehouseRemarkInputService {
         pendingInputs.remove(player.uniqueId)
     }
 
+    fun clearAll() {
+        pendingInputs.clear()
+    }
+
     private fun clearRemark(player: Player, pending: PendingRemarkInput) {
         WarehouseService.updatePageRemark(pending.owner, pending.page, "")
-        submitAsync { WarehouseService.savePage(pending.owner, pending.page, force = true) }
-        player.sendLang("remark-input-cleared", pending.page)
+        submitAsync {
+            val saved = WarehouseService.savePage(pending.owner, pending.page, force = true)
+            submit {
+                if (!player.isOnline) return@submit
+                if (saved) {
+                    player.sendLang("remark-input-cleared", pending.page)
+                } else {
+                    player.sendLang("remark-input-save-failed", pending.page)
+                }
+            }
+        }
     }
 
     private data class PendingRemarkInput(

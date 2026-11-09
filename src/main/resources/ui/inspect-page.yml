@@ -17,14 +17,12 @@ layout:
 items:
   background:
     char: "B"
-    material: STAINED_GLASS_PANE
+    material: GRAY_STAINED_GLASS_PANE
     name: " "
-    durability: 7
 
   disabled-storage:
-    material: STAINED_GLASS_PANE
+    material: LIGHT_GRAY_STAINED_GLASS_PANE
     name: "&8不可用槽位"
-    durability: 8
     lore:
       - "&7当前布局未显示这个槽位"
 

@@ -7,6 +7,7 @@ import com.whitesoul.warehouse.storage.PtcObjectWarehouseRepository
 import com.whitesoul.warehouse.storage.WarehouseRepository
 import com.whitesoul.warehouse.util.DebugLogger
 import com.whitesoul.warehouse.util.cloneOrNull
+import org.bukkit.Bukkit
 import org.bukkit.ChatColor
 import org.bukkit.OfflinePlayer
 import org.bukkit.entity.Player
@@ -14,6 +15,7 @@ import org.bukkit.inventory.ItemStack
 import taboolib.common.platform.function.warning
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 
 object WarehouseService {
 
@@ -22,75 +24,159 @@ object WarehouseService {
         val remaining: ItemStack?,
     )
 
-    private val repository: WarehouseRepository = PtcObjectWarehouseRepository()
+    data class SaveReport(
+        val attempted: Int,
+        val saved: Int,
+        val error: String? = null,
+    ) {
+        val failed: Int
+            get() = attempted - saved
+
+        val successful: Boolean
+            get() = failed == 0 && error == null
+    }
+
+    data class ReloadResult(
+        val successful: Boolean,
+        val pageReport: SaveReport,
+        val profileReport: SaveReport,
+        val error: String? = null,
+    )
+
+    private var repository: WarehouseRepository = PtcObjectWarehouseRepository()
     private val warehouseCache = ConcurrentHashMap<PageKey, WarehousePageData>()
     private val profileCache = ConcurrentHashMap<UUID, WarehouseProfile>()
-    // dirty 集合只记录"需要落盘的键"，真正数据本体仍保存在缓存映射里。
-    private val dirtyPages = ConcurrentHashMap.newKeySet<PageKey>()
-    private val dirtyProfiles = ConcurrentHashMap.newKeySet<UUID>()
+    private val loadedOwners = ConcurrentHashMap.newKeySet<UUID>()
+    private val ownerLoadErrors = ConcurrentHashMap<UUID, String>()
+    // 版本化脏标记确保保存期间产生的新修改不会被旧保存结果清除。
+    private val dirtyPages = ConcurrentHashMap<PageKey, Long>()
+    private val dirtyProfiles = ConcurrentHashMap<UUID, Long>()
+    private val changeSequence = AtomicLong()
+    private val repositoryLock = Any()
+    private val lifecycleLock = Any()
 
     @Volatile
-    private var available = false
+    private var storageState = StorageState.STOPPED
 
     @Volatile
     private var lastError: String? = null
 
     fun initialize() {
+        synchronized(lifecycleLock) {
+            storageState = StorageState.RELOADING
+        }
         DebugLogger.timed("initialize 数据库连接") {
-            runCatching {
-                repository.initialize()
-                available = true
-                lastError = null
-            }.onFailure {
-                available = false
-                lastError = it.message
-                warning("Failed to initialize SoulWarehouse storage: ${it.message}")
-                it.printStackTrace()
+            synchronized(repositoryLock) {
+                val candidate = PtcObjectWarehouseRepository()
+                runCatching {
+                    candidate.initialize()
+                    repository.shutdown()
+                    repository = candidate
+                    lastError = null
+                    synchronized(lifecycleLock) {
+                        storageState = StorageState.RUNNING
+                    }
+                }.onFailure {
+                    candidate.shutdown()
+                    lastError = it.message
+                    synchronized(lifecycleLock) {
+                        storageState = StorageState.STOPPED
+                    }
+                    warning("Failed to initialize SoulWarehouse storage: ${it.message}")
+                    it.printStackTrace()
+                }
             }
         }
     }
 
     fun shutdown() {
-        // 关闭前强制刷一次缓存，确保停服时不会丢最后一批未自动保存的数据。
-        DebugLogger.timed("shutdown 保存全部缓存") {
-            val savedPages = saveDirtyPages(force = true)
-            val savedProfiles = saveDirtyProfiles(force = true)
-            val remainingPages = dirtyPages.size
-            val remainingProfiles = dirtyProfiles.size
-            if (remainingPages > 0 || remainingProfiles > 0) {
-                warning("Shutdown save incomplete! $remainingPages dirty pages and $remainingProfiles dirty profiles were NOT saved. Data may be lost.")
-            } else {
-                DebugLogger.log { "shutdown 保存完成: pages=$savedPages, profiles=$savedProfiles" }
+        synchronized(lifecycleLock) {
+            if (storageState == StorageState.STOPPED) {
+                return
+            }
+            storageState = StorageState.SHUTTING_DOWN
+        }
+        synchronized(repositoryLock) {
+            DebugLogger.timed("shutdown 保存全部缓存") {
+                val pageReport = saveDirtyPagesLocked(force = true)
+                val profileReport = saveDirtyProfilesLocked(force = true)
+                if (!pageReport.successful || !profileReport.successful || dirtyPages.isNotEmpty() || dirtyProfiles.isNotEmpty()) {
+                    warning("Shutdown save incomplete! ${pageReport.failed} pages and ${profileReport.failed} profiles failed. Data may be lost.")
+                } else {
+                    DebugLogger.log { "shutdown 保存完成: pages=${pageReport.saved}, profiles=${profileReport.saved}" }
+                }
+            }
+            repository.shutdown()
+            synchronized(lifecycleLock) {
+                storageState = StorageState.STOPPED
             }
         }
-        repository.shutdown()
-        available = false
     }
 
-    fun reload() {
-        // reload 先保存后清空，避免切配置时把旧缓存直接丢掉。
-        val savedPages = saveDirtyPages(force = true)
-        val savedProfiles = saveDirtyProfiles(force = true)
-        val remainingPages = dirtyPages.size
-        val remainingProfiles = dirtyProfiles.size
-        if (remainingPages > 0 || remainingProfiles > 0) {
-            warning("Reload save incomplete! $remainingPages dirty pages and $remainingProfiles dirty profiles were NOT saved. Keeping dirty markers for retry.")
+    fun reload(reloadConfiguration: () -> Unit): ReloadResult {
+        synchronized(lifecycleLock) {
+            if (storageState != StorageState.RUNNING) {
+                return ReloadResult(false, EMPTY_SAVE_REPORT, EMPTY_SAVE_REPORT, "Storage is not running.")
+            }
+            storageState = StorageState.RELOADING
         }
-        warehouseCache.clear()
-        profileCache.clear()
-        // 只有全部保存成功才清除脏标记，否则保留让下次自动保存兜底。
-        if (remainingPages == 0) dirtyPages.clear()
-        if (remainingProfiles == 0) dirtyProfiles.clear()
-        repository.shutdown()
-        initialize()
+        synchronized(repositoryLock) {
+            val pageReport = saveDirtyPagesLocked(force = true)
+            val profileReport = saveDirtyProfilesLocked(force = true)
+            if (!pageReport.successful || !profileReport.successful || dirtyPages.isNotEmpty() || dirtyProfiles.isNotEmpty()) {
+                val error = "Reload aborted because cached data could not be saved."
+                lastError = error
+                synchronized(lifecycleLock) {
+                    storageState = StorageState.RUNNING
+                }
+                return ReloadResult(false, pageReport, profileReport, error)
+            }
+
+            val candidate = PtcObjectWarehouseRepository()
+            return runCatching {
+                reloadConfiguration()
+                candidate.initialize()
+                val previous = repository
+                repository = candidate
+                previous.shutdown()
+                warehouseCache.clear()
+                profileCache.clear()
+                loadedOwners.clear()
+                ownerLoadErrors.clear()
+                dirtyPages.clear()
+                dirtyProfiles.clear()
+                lastError = null
+                synchronized(lifecycleLock) {
+                    storageState = StorageState.RUNNING
+                }
+                ReloadResult(true, pageReport, profileReport)
+            }.getOrElse {
+                candidate.shutdown()
+                val error = it.message ?: it.javaClass.simpleName
+                lastError = error
+                synchronized(lifecycleLock) {
+                    storageState = StorageState.RUNNING
+                }
+                warning("Failed to reload SoulWarehouse storage: $error")
+                ReloadResult(false, pageReport, profileReport, error)
+            }
+        }
     }
 
     fun isAvailable(): Boolean {
-        return available
+        return storageState == StorageState.RUNNING
     }
 
     fun getLastError(): String? {
         return lastError
+    }
+
+    fun isOwnerLoaded(uuid: UUID): Boolean {
+        return storageState == StorageState.RUNNING && uuid in loadedOwners
+    }
+
+    fun getOwnerLoadError(uuid: UUID): String? {
+        return ownerLoadErrors[uuid]
     }
 
     fun getAccessiblePages(player: Player): Int {
@@ -98,36 +184,37 @@ object WarehouseService {
     }
 
     fun touchProfile(player: Player): WarehouseProfile {
-        val now = System.currentTimeMillis()
-        val profile = profileCache[player.uniqueId] ?: if (available) repository.loadProfile(player.uniqueId) else null
-        val result = profile ?: WarehouseProfile(
-            uuid = player.uniqueId,
-            name = player.name,
-            maxPages = PluginConfig.defaultPages,
-            createdAt = now,
-        )
-        result.name = player.name
-        result.updatedAt = now
-        result.lastOpenAt = now
-        profileCache[player.uniqueId] = result
-        markProfileDirty(player.uniqueId)
-        return result
+        return synchronized(lifecycleLock) {
+            check(storageState == StorageState.RUNNING && player.uniqueId in loadedOwners) {
+                "Warehouse owner ${player.uniqueId} is not loaded."
+            }
+            val now = System.currentTimeMillis()
+            val profile = profileCache[player.uniqueId] ?: WarehouseProfile(
+                uuid = player.uniqueId,
+                name = player.name,
+                maxPages = PluginConfig.defaultPages,
+                createdAt = now,
+            ).also { profileCache[player.uniqueId] = it }
+            synchronized(profile.lock) {
+                profile.name = normalizeProfileName(player.name)
+                profile.updatedAt = now
+                profile.lastOpenAt = now
+            }
+            markProfileDirty(player.uniqueId)
+            profile.snapshot()
+        }
     }
 
     fun setMaxPages(uuid: UUID, pages: Int): Int {
-        val profile = getProfileByUuid(uuid)
-        profile.maxPages = pages.coerceIn(1, PluginConfig.maxPages)
-        profile.updatedAt = System.currentTimeMillis()
-        markProfileDirty(uuid)
-        return profile.maxPages
+        return updateProfile(uuid) { profile ->
+            profile.maxPages = pages.coerceIn(1, PluginConfig.maxPages)
+        }
     }
 
     fun addMaxPages(uuid: UUID, amount: Int): Int {
-        val profile = getProfileByUuid(uuid)
-        profile.maxPages = (profile.maxPages + amount).coerceIn(1, PluginConfig.maxPages)
-        profile.updatedAt = System.currentTimeMillis()
-        markProfileDirty(uuid)
-        return profile.maxPages
+        return updateProfile(uuid) { profile ->
+            profile.maxPages = (profile.maxPages + amount).coerceIn(1, PluginConfig.maxPages)
+        }
     }
 
     fun removeMaxPages(uuid: UUID, amount: Int): Int {
@@ -135,15 +222,19 @@ object WarehouseService {
     }
 
     fun toggleAutoPickup(player: Player): Boolean {
-        val profile = getProfile(player)
-        profile.autoPickup = !profile.autoPickup
-        profile.updatedAt = System.currentTimeMillis()
-        markProfileDirty(player.uniqueId)
-        return profile.autoPickup
+        var newState = false
+        updateProfile(player.uniqueId) { profile ->
+            profile.autoPickup = !profile.autoPickup
+            newState = profile.autoPickup
+        }
+        return newState
     }
 
     fun isAutoPickup(player: Player): Boolean {
-        return getProfile(player).autoPickup
+        val profile = profileCache[player.uniqueId] ?: return false
+        synchronized(profile.lock) {
+            return profile.autoPickup
+        }
     }
 
     fun getProfile(player: OfflinePlayer): WarehouseProfile {
@@ -151,31 +242,20 @@ object WarehouseService {
     }
 
     fun getProfileByUuid(uuid: UUID, fallbackName: String = uuid.toString()): WarehouseProfile {
-        val cached = profileCache[uuid]
-        if (cached != null) {
-            return cached
+        synchronized(lifecycleLock) {
+            return profileCache[uuid]?.snapshot() ?: WarehouseProfile(
+                uuid = uuid,
+                name = normalizeProfileName(fallbackName),
+                maxPages = PluginConfig.defaultPages,
+            )
         }
-        val loaded = if (available) repository.loadProfile(uuid) else null
-        if (loaded != null) {
-            profileCache[uuid] = loaded
-            return loaded
-        }
-        val fallback = WarehouseProfile(
-            uuid = uuid,
-            name = fallbackName,
-            maxPages = PluginConfig.defaultPages,
-        )
-        profileCache[uuid] = fallback
-        return fallback
     }
 
-    fun getOrLoadPage(owner: UUID, page: Int): WarehousePageData {
+    private fun getCachedPage(owner: UUID, page: Int): WarehousePageData {
+        check(owner in loadedOwners) { "Warehouse owner $owner is not loaded." }
         val key = PageKey(owner, page)
         return warehouseCache.computeIfAbsent(key) {
-            // 页面按需加载，未创建过的数据直接回退到一页空仓。
-            DebugLogger.timed("loadPage owner=$owner, page=$page") {
-                if (available) repository.loadPage(owner, page) ?: WarehousePageData(owner, page) else WarehousePageData(owner, page)
-            }
+            WarehousePageData(owner, page)
         }
     }
 
@@ -183,134 +263,190 @@ object WarehouseService {
      * 预热指定玩家的 profile 和所有可访问页面到缓存。
      * 应在异步线程调用，避免阻塞主线程。
      */
-    fun preloadOwner(uuid: UUID) {
-        if (!available) return
-        DebugLogger.timed("preloadOwner uuid=$uuid") {
-            // 预热 profile
-            getProfileByUuid(uuid)
-            // 预热所有页面
-            val maxPages = profileCache[uuid]?.maxPages?.coerceIn(1, PluginConfig.maxPages) ?: PluginConfig.defaultPages
-            for (page in 1..maxPages) {
-                getOrLoadPage(uuid, page)
+    fun preloadOwner(uuid: UUID, fallbackName: String = uuid.toString()): Boolean {
+        if (uuid in loadedOwners) return true
+        if (Bukkit.isPrimaryThread()) {
+            warning("Refusing to load warehouse owner $uuid on the Paper main thread.")
+            return false
+        }
+        return DebugLogger.timed("preloadOwner uuid=$uuid") {
+            synchronized(repositoryLock) {
+                if (storageState != StorageState.RUNNING) {
+                    return@synchronized false
+                }
+                if (uuid in loadedOwners) {
+                    return@synchronized true
+                }
+                runCatching {
+                    val profile = repository.loadProfile(uuid) ?: WarehouseProfile(
+                        uuid = uuid,
+                        name = normalizeProfileName(fallbackName),
+                        maxPages = PluginConfig.defaultPages,
+                    )
+                    synchronized(profile.lock) {
+                        profile.name = normalizeProfileName(profile.name.ifBlank { fallbackName })
+                        profile.maxPages = profile.maxPages.coerceIn(1, PluginConfig.maxPages)
+                    }
+                    val pages = (1..PluginConfig.maxPages).associateWith { page ->
+                        repository.loadPage(uuid, page) ?: WarehousePageData(uuid, page)
+                    }
+                    profileCache[uuid] = profile
+                    pages.forEach { (page, data) -> warehouseCache[PageKey(uuid, page)] = data }
+                    ownerLoadErrors.remove(uuid)
+                    loadedOwners += uuid
+                    true
+                }.getOrElse {
+                    val error = it.message ?: it.javaClass.simpleName
+                    ownerLoadErrors[uuid] = error
+                    warning("Failed to load warehouse owner $uuid: $error")
+                    false
+                }
             }
         }
     }
 
     fun snapshotPageContents(owner: UUID, page: Int): Array<ItemStack?> {
-        return getOrLoadPage(owner, page).snapshotContents()
+        synchronized(lifecycleLock) {
+            return getCachedPage(owner, page).snapshotContents()
+        }
     }
 
     fun getPageUsedSlots(owner: UUID, page: Int, activeSize: Int): Int {
-        return getOrLoadPage(owner, page).countUsedSlots(activeSize)
+        synchronized(lifecycleLock) {
+            return getCachedPage(owner, page).countUsedSlots(activeSize)
+        }
     }
 
     fun getPageRemark(owner: UUID, page: Int): String {
-        return getOrLoadPage(owner, page).remark
+        synchronized(lifecycleLock) {
+            return getCachedPage(owner, page).getRemark()
+        }
     }
 
     fun updatePageRemark(owner: UUID, page: Int, remark: String): String {
         val normalized = normalizePageRemark(remark)
-        val pageData = getOrLoadPage(owner, page)
-        pageData.remark = normalized
-        markDirty(owner, page)
+        synchronized(lifecycleLock) {
+            if (storageState != StorageState.RUNNING) return normalized
+            val pageData = getCachedPage(owner, page)
+            if (pageData.updateRemark(normalized)) {
+                markDirty(owner, page)
+            }
+        }
         return normalized
     }
 
     fun getPageCategory(owner: UUID, page: Int): String {
-        return getOrLoadPage(owner, page).category
+        synchronized(lifecycleLock) {
+            return getCachedPage(owner, page).getCategory()
+        }
     }
 
     fun updatePageCategory(owner: UUID, page: Int, category: String) {
-        val pageData = getOrLoadPage(owner, page)
-        pageData.category = category
-        markDirty(owner, page)
+        val normalized = category.take(MAX_PAGE_CATEGORY_LENGTH)
+        synchronized(lifecycleLock) {
+            if (storageState != StorageState.RUNNING) return
+            val pageData = getCachedPage(owner, page)
+            if (pageData.updateCategory(normalized)) {
+                markDirty(owner, page)
+            }
+        }
     }
 
     fun updatePageContents(owner: UUID, page: Int, contents: Array<ItemStack?>, size: Int = PluginConfig.pageSize): Boolean {
-        val pageData = getOrLoadPage(owner, page)
-        val changed = pageData.replaceContents(contents, size)
-        if (changed) {
-            markDirty(owner, page)
+        synchronized(lifecycleLock) {
+            if (storageState != StorageState.RUNNING) return false
+            val pageData = getCachedPage(owner, page)
+            val changed = pageData.replaceContents(contents, size)
+            if (changed) {
+                markDirty(owner, page)
+            }
+            return changed
         }
-        return changed
     }
 
     fun storeItem(player: Player, itemStack: ItemStack, size: Int = PluginConfig.pageSize): StoreItemResult {
-        val normalized = itemStack.cloneOrNull() ?: return StoreItemResult(0, null)
-        if (!available || !isItemAllowed(normalized)) {
-            DebugLogger.log { "storeItem 拒绝: player=${player.name}, item=${normalized.type.name}, allowed=${isItemAllowed(normalized)}, available=$available" }
-            return StoreItemResult(0, normalized)
-        }
-        val start = System.nanoTime()
-        var remainingAmount = normalized.amount
-        val accessiblePages = getAccessiblePages(player)
-        val categories = PluginConfig.categories
+        return synchronized(lifecycleLock) {
+            val normalized = itemStack.cloneOrNull() ?: return StoreItemResult(0, null)
+            val ready = storageState == StorageState.RUNNING && player.uniqueId in loadedOwners
+            if (!ready || !isItemAllowed(normalized)) {
+                DebugLogger.log { "storeItem 拒绝: player=${player.name}, item=${normalized.type.name}, allowed=${isItemAllowed(normalized)}, ready=$ready" }
+                return StoreItemResult(0, normalized)
+            }
+            val start = System.nanoTime()
+            var remainingAmount = normalized.amount
+            val accessiblePages = getAccessiblePages(player)
+            val categories = PluginConfig.categories
 
         // 将页面分为两组：有匹配分类的页面优先，无分类的页面兜底。
-        val categorizedPages = mutableListOf<Int>()
-        val uncategorizedPages = mutableListOf<Int>()
-        for (page in 1..accessiblePages) {
-            val categoryName = getPageCategory(player.uniqueId, page)
-            if (categoryName.isBlank()) {
-                uncategorizedPages += page
-            } else {
-                val category = categories[categoryName] ?: continue
-                if (PluginConfig.matchCategory(normalized, category)) {
-                    categorizedPages += page
+            val categorizedPages = mutableListOf<Int>()
+            val uncategorizedPages = mutableListOf<Int>()
+            for (page in 1..accessiblePages) {
+                val categoryName = getPageCategory(player.uniqueId, page)
+                if (categoryName.isBlank()) {
+                    uncategorizedPages += page
+                } else {
+                    val category = categories[categoryName] ?: continue
+                    if (PluginConfig.matchCategory(normalized, category)) {
+                        categorizedPages += page
+                    }
+                    // 有分类但不匹配的页面直接跳过
                 }
-                // 有分类但不匹配的页面直接跳过
             }
-        }
 
-        // 4 阶段入仓：分类页合并 → 分类页空槽 → 默认页合并 → 默认页空槽
-        val orderedPages = listOf(categorizedPages, uncategorizedPages)
-        for (pages in orderedPages) {
-            for (page in pages) {
-                remainingAmount = storeIntoPage(player.uniqueId, page, normalized, remainingAmount, size, mergeOnly = true)
-                if (remainingAmount <= 0) {
-                    val elapsed = (System.nanoTime() - start) / 1_000_000.0
-                    DebugLogger.log { "storeItem 完成(合并): player=${player.name}, item=${normalized.type.name}, amount=${normalized.amount}, elapsed=${String.format("%.2f", elapsed)}ms" }
-                    return StoreItemResult(normalized.amount, null)
+            // 4 阶段入仓：分类页合并 → 分类页空槽 → 默认页合并 → 默认页空槽
+            val orderedPages = listOf(categorizedPages, uncategorizedPages)
+            for (pages in orderedPages) {
+                for (page in pages) {
+                    remainingAmount = storeIntoPage(player.uniqueId, page, normalized, remainingAmount, size, mergeOnly = true)
+                    if (remainingAmount <= 0) {
+                        val elapsed = (System.nanoTime() - start) / 1_000_000.0
+                        DebugLogger.log { "storeItem 完成(合并): player=${player.name}, item=${normalized.type.name}, amount=${normalized.amount}, elapsed=${String.format("%.2f", elapsed)}ms" }
+                        return StoreItemResult(normalized.amount, null)
+                    }
+                }
+                for (page in pages) {
+                    remainingAmount = storeIntoPage(player.uniqueId, page, normalized, remainingAmount, size, mergeOnly = false)
+                    if (remainingAmount <= 0) {
+                        val elapsed = (System.nanoTime() - start) / 1_000_000.0
+                        DebugLogger.log { "storeItem 完成(新槽): player=${player.name}, item=${normalized.type.name}, amount=${normalized.amount}, elapsed=${String.format("%.2f", elapsed)}ms" }
+                        return StoreItemResult(normalized.amount, null)
+                    }
                 }
             }
-            for (page in pages) {
-                remainingAmount = storeIntoPage(player.uniqueId, page, normalized, remainingAmount, size, mergeOnly = false)
-                if (remainingAmount <= 0) {
-                    val elapsed = (System.nanoTime() - start) / 1_000_000.0
-                    DebugLogger.log { "storeItem 完成(新槽): player=${player.name}, item=${normalized.type.name}, amount=${normalized.amount}, elapsed=${String.format("%.2f", elapsed)}ms" }
-                    return StoreItemResult(normalized.amount, null)
-                }
-            }
-        }
 
-        val storedAmount = normalized.amount - remainingAmount
-        val elapsed = (System.nanoTime() - start) / 1_000_000.0
-        DebugLogger.log { "storeItem 部分存入: player=${player.name}, item=${normalized.type.name}, stored=$storedAmount, remaining=$remainingAmount, elapsed=${String.format("%.2f", elapsed)}ms" }
-        return StoreItemResult(
-            storedAmount = storedAmount,
-            remaining = normalized.clone().apply { amount = remainingAmount },
-        )
+            val storedAmount = normalized.amount - remainingAmount
+            val elapsed = (System.nanoTime() - start) / 1_000_000.0
+            DebugLogger.log { "storeItem 部分存入: player=${player.name}, item=${normalized.type.name}, stored=$storedAmount, remaining=$remainingAmount, elapsed=${String.format("%.2f", elapsed)}ms" }
+            StoreItemResult(
+                storedAmount = storedAmount,
+                remaining = normalized.clone().apply { amount = remainingAmount },
+            )
+        }
     }
 
-    fun markDirty(owner: UUID, page: Int) {
-        dirtyPages += PageKey(owner, page)
+    private fun markDirty(owner: UUID, page: Int) {
+        dirtyPages[PageKey(owner, page)] = changeSequence.incrementAndGet()
     }
 
-    fun markProfileDirty(uuid: UUID) {
-        dirtyProfiles += uuid
+    private fun markProfileDirty(uuid: UUID) {
+        dirtyProfiles[uuid] = changeSequence.incrementAndGet()
     }
 
     fun saveProfile(uuid: UUID, force: Boolean = false): Boolean {
-        if (!available) {
-            return false
+        synchronized(repositoryLock) {
+            if (storageState != StorageState.RUNNING) return false
+            return saveProfileLocked(uuid, force)
         }
-        if (!force && uuid !in dirtyProfiles) {
-            return true
-        }
-        val profile = profileCache[uuid] ?: return true
+    }
+
+    private fun saveProfileLocked(uuid: UUID, force: Boolean): Boolean {
+        val version = dirtyProfiles[uuid]
+        if (!force && version == null) return true
+        val profile = profileCache[uuid] ?: return version == null
+        val target = ProfileSaveTarget(uuid, version, profile.snapshot())
         return runCatching {
-            repository.saveProfile(profile)
-            dirtyProfiles.remove(uuid)
+            repository.saveProfile(target.data)
+            completeProfileSave(target)
             true
         }.getOrElse {
             warning("Failed to save warehouse profile $uuid - ${it.message}")
@@ -318,106 +454,128 @@ object WarehouseService {
         }
     }
 
-    fun saveDirtyProfiles(force: Boolean = false): Int {
-        if (!available) {
-            return 0
+    fun saveDirtyProfiles(force: Boolean = false): SaveReport {
+        synchronized(repositoryLock) {
+            if (storageState != StorageState.RUNNING) return UNAVAILABLE_SAVE_REPORT
+            return saveDirtyProfilesLocked(force)
         }
-        val uuids = dirtyProfiles.toList()
-        if (uuids.isEmpty()) {
-            return 0
+    }
+
+    private fun saveDirtyProfilesLocked(force: Boolean): SaveReport {
+        val uuids = if (force) profileCache.keys.toList() else dirtyProfiles.keys.toList()
+        val targets = uuids.mapNotNull { uuid ->
+            val version = dirtyProfiles[uuid]
+            val profile = profileCache[uuid] ?: return@mapNotNull null
+            if (!force && version == null) return@mapNotNull null
+            ProfileSaveTarget(uuid, version, profile.snapshot())
         }
-        val profiles = uuids.mapNotNull { uuid -> profileCache[uuid]?.let { uuid to it } }
-        if (profiles.isEmpty()) {
-            return 0
-        }
+        if (targets.isEmpty()) return SaveReport(uuids.size, 0)
         return runCatching {
-            repository.saveProfiles(profiles.map { it.second })
-            profiles.forEach { dirtyProfiles.remove(it.first) }
-            profiles.size
-        }.getOrElse {
-            warning("Failed to batch save warehouse profiles - ${it.message}")
-            if (force) {
-                profiles.count { (uuid, _) -> saveProfile(uuid, true) }
-            } else {
-                0
+            repository.saveProfiles(targets.map { it.data })
+            targets.forEach(::completeProfileSave)
+            SaveReport(uuids.size, targets.size)
+        }.getOrElse { batchError ->
+            warning("Failed to batch save warehouse profiles - ${batchError.message}")
+            if (!force) return@getOrElse SaveReport(uuids.size, 0)
+            var saved = 0
+            targets.forEach { target ->
+                runCatching {
+                    repository.saveProfile(target.data)
+                    completeProfileSave(target)
+                    saved++
+                }.onFailure {
+                    warning("Failed to save warehouse profile ${target.uuid} - ${it.message}")
+                }
             }
+            SaveReport(uuids.size, saved)
         }
     }
 
     fun savePage(owner: UUID, page: Int, force: Boolean = false): Boolean {
-        if (!available) {
-            return false
+        synchronized(repositoryLock) {
+            if (storageState != StorageState.RUNNING) return false
+            return savePageLocked(PageKey(owner, page), force)
         }
-        val key = PageKey(owner, page)
-        if (!force && key !in dirtyPages) {
-            return true
-        }
-        val pageData = warehouseCache[key] ?: return true
-        return DebugLogger.timed("savePage owner=$owner, page=$page") {
+    }
+
+    private fun savePageLocked(key: PageKey, force: Boolean): Boolean {
+        val version = dirtyPages[key]
+        if (!force && version == null) return true
+        val pageData = warehouseCache[key] ?: return version == null
+        val target = PageSaveTarget(key, version, pageData.snapshotForPersistence())
+        return DebugLogger.timed("savePage owner=${key.owner}, page=${key.page}") {
             runCatching {
-                pageData.updatedAt = System.currentTimeMillis()
-                repository.savePage(pageData)
-                dirtyPages.remove(key)
+                repository.savePage(target.data)
+                completePageSave(target)
                 true
             }.getOrElse {
-                warning("Failed to save warehouse page ${owner}:$page - ${it.message}")
+                warning("Failed to save warehouse page ${key.owner}:${key.page} - ${it.message}")
                 false
             }
         }
     }
 
-    fun saveOwnerPages(owner: UUID, force: Boolean = false): Int {
-        if (!available) {
-            return 0
+    fun saveOwnerPages(owner: UUID, force: Boolean = false): SaveReport {
+        synchronized(repositoryLock) {
+            if (storageState != StorageState.RUNNING) return UNAVAILABLE_SAVE_REPORT
+            val keys = if (force) {
+                warehouseCache.keys.filter { it.owner == owner }
+            } else {
+                dirtyPages.keys.filter { it.owner == owner }
+            }
+            return savePagesLocked(keys, force, "owner=$owner")
         }
-        val pages = dirtyPages
-            .filter { it.owner == owner }
-            .mapNotNull { key -> warehouseCache[key]?.let { key to it } }
-        if (pages.isEmpty()) {
-            return 0
+    }
+
+    fun saveDirtyPages(force: Boolean = false): SaveReport {
+        synchronized(repositoryLock) {
+            if (storageState != StorageState.RUNNING) return UNAVAILABLE_SAVE_REPORT
+            return saveDirtyPagesLocked(force)
         }
-        return DebugLogger.timed("saveOwnerPages owner=$owner, count=${pages.size}") {
+    }
+
+    private fun saveDirtyPagesLocked(force: Boolean): SaveReport {
+        val keys = if (force) warehouseCache.keys.toList() else dirtyPages.keys.toList()
+        return savePagesLocked(keys, force, "all")
+    }
+
+    private fun savePagesLocked(keys: List<PageKey>, retryIndividually: Boolean, context: String): SaveReport {
+        val targets = keys.mapNotNull { key ->
+            val version = dirtyPages[key]
+            val pageData = warehouseCache[key] ?: return@mapNotNull null
+            if (!retryIndividually && version == null) return@mapNotNull null
+            PageSaveTarget(key, version, pageData.snapshotForPersistence())
+        }
+        if (targets.isEmpty()) return SaveReport(keys.size, 0)
+        return DebugLogger.timed("savePages context=$context, count=${targets.size}") {
             runCatching {
-                pages.forEach { (_, pageData) -> pageData.updatedAt = System.currentTimeMillis() }
-                repository.savePages(pages.map { it.second })
-                pages.forEach { (key, _) -> dirtyPages.remove(key) }
-                pages.size
-            }.getOrElse {
-                warning("Failed to batch save warehouse pages for $owner - ${it.message}")
-                if (force) {
-                    pages.count { (key, _) -> savePage(key.owner, key.page, true) }
-                } else {
-                    0
+                repository.savePages(targets.map { it.data })
+                targets.forEach(::completePageSave)
+                SaveReport(keys.size, targets.size)
+            }.getOrElse { batchError ->
+                warning("Failed to batch save warehouse pages ($context) - ${batchError.message}")
+                if (!retryIndividually) return@getOrElse SaveReport(keys.size, 0)
+                var saved = 0
+                targets.forEach { target ->
+                    runCatching {
+                        repository.savePage(target.data)
+                        completePageSave(target)
+                        saved++
+                    }.onFailure {
+                        warning("Failed to save warehouse page ${target.key.owner}:${target.key.page} - ${it.message}")
+                    }
                 }
+                SaveReport(keys.size, saved)
             }
         }
     }
 
-    fun saveDirtyPages(force: Boolean = false): Int {
-        if (!available) {
-            return 0
-        }
-        val pages = dirtyPages
-            .toList()
-            .mapNotNull { key -> warehouseCache[key]?.let { key to it } }
-        if (pages.isEmpty()) {
-            return 0
-        }
-        return DebugLogger.timed("saveDirtyPages count=${pages.size}") {
-            runCatching {
-                pages.forEach { (_, pageData) -> pageData.updatedAt = System.currentTimeMillis() }
-                repository.savePages(pages.map { it.second })
-                pages.forEach { (key, _) -> dirtyPages.remove(key) }
-                pages.size
-            }.getOrElse {
-                warning("Failed to batch save warehouse pages - ${it.message}")
-                if (force) {
-                    pages.count { (key, _) -> savePage(key.owner, key.page, true) }
-                } else {
-                    0
-                }
-            }
-        }
+    private fun completePageSave(target: PageSaveTarget) {
+        target.version?.let { version -> dirtyPages.remove(target.key, version) }
+    }
+
+    private fun completeProfileSave(target: ProfileSaveTarget) {
+        target.version?.let { version -> dirtyProfiles.remove(target.uuid, version) }
     }
 
     fun isPageAccessible(player: Player, page: Int): Boolean {
@@ -464,6 +622,27 @@ object WarehouseService {
         return plain.replace(Regex("\\s+"), " ").trim().take(MAX_PAGE_REMARK_LENGTH)
     }
 
+    private fun updateProfile(uuid: UUID, update: (WarehouseProfile) -> Unit): Int {
+        synchronized(lifecycleLock) {
+            if (storageState != StorageState.RUNNING || uuid !in loadedOwners) {
+                return profileCache[uuid]?.snapshot()?.maxPages ?: PluginConfig.defaultPages
+            }
+            val profile = profileCache[uuid] ?: return PluginConfig.defaultPages
+            val result = synchronized(profile.lock) {
+                update(profile)
+                profile.name = normalizeProfileName(profile.name)
+                profile.updatedAt = System.currentTimeMillis()
+                profile.maxPages
+            }
+            markProfileDirty(uuid)
+            return result
+        }
+    }
+
+    private fun normalizeProfileName(name: String): String {
+        return name.take(MAX_PROFILE_NAME_LENGTH)
+    }
+
     private fun storeIntoPage(
         owner: UUID,
         page: Int,
@@ -475,7 +654,7 @@ object WarehouseService {
         if (amount <= 0) {
             return 0
         }
-        val pageData = getOrLoadPage(owner, page)
+        val pageData = getCachedPage(owner, page)
         val limit = size.coerceIn(0, WarehousePageData.SLOT_COUNT)
         var remaining = amount
         var changed = false
@@ -510,7 +689,7 @@ object WarehouseService {
                 }
             }
             if (changed) {
-                pageData.updatedAt = System.currentTimeMillis()
+                pageData.markUpdated()
             }
         }
         if (changed) {
@@ -521,18 +700,45 @@ object WarehouseService {
 
     private data class PageKey(val owner: UUID, val page: Int)
 
-    private const val MAX_PAGE_REMARK_LENGTH = 32
+    private data class PageSaveTarget(
+        val key: PageKey,
+        val version: Long?,
+        val data: WarehousePageData,
+    )
+
+    private data class ProfileSaveTarget(
+        val uuid: UUID,
+        val version: Long?,
+        val data: WarehouseProfile,
+    )
+
+    private enum class StorageState {
+        STOPPED,
+        RUNNING,
+        RELOADING,
+        SHUTTING_DOWN,
+    }
 
     /** 清理指定玩家的所有缓存条目，防止离线后内存泄漏。应在保存完数据后调用。 */
     fun evictOwner(uuid: UUID) {
-        // 只有当脏数据已全部落盘后才清除缓存和脏标记，否则保留脏标记让下次自动保存兜底。
-        val hasDirtyPages = dirtyPages.any { it.owner == uuid }
-        val hasDirtyProfile = uuid in dirtyProfiles
-        if (hasDirtyPages || hasDirtyProfile) {
-            warning("evictOwner $uuid: skipping dirty data cleanup (dirtyPages=$hasDirtyPages, dirtyProfile=$hasDirtyProfile), will retry on next auto-save.")
-            return
+        synchronized(lifecycleLock) {
+            // 只有当脏数据已全部落盘后才清除缓存，否则保留数据让下次自动保存兜底。
+            val hasDirtyPages = dirtyPages.keys.any { it.owner == uuid }
+            val hasDirtyProfile = dirtyProfiles.containsKey(uuid)
+            if (hasDirtyPages || hasDirtyProfile) {
+                warning("evictOwner $uuid: skipping dirty data cleanup (dirtyPages=$hasDirtyPages, dirtyProfile=$hasDirtyProfile), will retry on next auto-save.")
+                return
+            }
+            warehouseCache.keys.removeIf { it.owner == uuid }
+            profileCache.remove(uuid)
+            loadedOwners.remove(uuid)
+            ownerLoadErrors.remove(uuid)
         }
-        warehouseCache.keys.removeIf { it.owner == uuid }
-        profileCache.remove(uuid)
     }
+
+    private val EMPTY_SAVE_REPORT = SaveReport(0, 0)
+    private val UNAVAILABLE_SAVE_REPORT = SaveReport(0, 0, "Storage is not running.")
+    private const val MAX_PAGE_REMARK_LENGTH = 32
+    private const val MAX_PAGE_CATEGORY_LENGTH = 64
+    private const val MAX_PROFILE_NAME_LENGTH = 64
 }

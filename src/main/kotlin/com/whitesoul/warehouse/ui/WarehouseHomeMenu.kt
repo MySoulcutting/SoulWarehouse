@@ -15,6 +15,10 @@ object WarehouseHomeMenu {
             player.sendLang("storage-unavailable", WarehouseService.getLastError() ?: "unknown")
             return
         }
+        if (!WarehouseService.isOwnerLoaded(player.uniqueId)) {
+            MenuSupport.loadOwner(player, player.uniqueId, player.name) { openSelf(player) }
+            return
+        }
         val profile = WarehouseService.touchProfile(player)
         val pageSize = MenuSupport.storageCapacity()
         val pageSlots = HomeUiConfig.pageSlots
@@ -27,7 +31,7 @@ object WarehouseHomeMenu {
             onClick(lock = true) {}
 
             // 填充物
-            set(fillerChar, HomeUiConfig.filler.buildItem(fallbackMaterial = org.bukkit.Material.STAINED_GLASS_PANE))
+            set(fillerChar, HomeUiConfig.filler.buildItem(fallbackMaterial = org.bukkit.Material.GRAY_STAINED_GLASS_PANE))
 
             // 使用说明
             set(HomeUiConfig.helpButton.char, HomeUiConfig.helpButton.buildItem(fallbackMaterial = org.bukkit.Material.BOOK)) {

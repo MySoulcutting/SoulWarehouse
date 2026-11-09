@@ -8,6 +8,7 @@ import taboolib.expansion.dbFile
 import taboolib.library.configuration.ConfigurationSection
 import taboolib.module.configuration.Config
 import taboolib.module.configuration.Configuration
+import taboolib.common.platform.function.warning
 
 @Inject
 object PluginConfig {
@@ -28,7 +29,7 @@ object PluginConfig {
         get() = config.getString("database.user", "root")!!
 
     val databasePassword: String
-        get() = config.getString("database.password", "123456")!!
+        get() = config.getString("database.password", "")!!
 
     val databaseName: String
         get() = config.getString("database.database", "minecraft")!!
@@ -49,11 +50,32 @@ object PluginConfig {
         get() = config.getBoolean("database.use-ssl", false)
 
     val databaseSslMode: String?
+        get() = when (databaseType) {
+            "mysql", "mariadb" -> configuredSslMode ?: if (useSsl) "REQUIRED" else "DISABLED"
+            else -> null
+        }
+
+    val databaseFlags: List<String>
+        get() = when (databaseType) {
+            "postgresql", "pgsql", "pg" -> listOf("sslmode=${postgresSslMode()}")
+            else -> emptyList()
+        }
+
+    private val configuredSslMode: String?
         get() = config.getString("database.ssl-mode")?.trim()?.takeIf { it.isNotEmpty() }
-            ?: when (databaseType) {
-                "mysql", "mariadb" -> if (useSsl) "REQUIRED" else "DISABLED"
-                else -> null
-            }
+
+    private fun postgresSslMode(): String {
+        val configured = configuredSslMode ?: return if (useSsl) "require" else "disable"
+        return when (configured.lowercase().replace('_', '-')) {
+            "disabled", "disable" -> "disable"
+            "allow" -> "allow"
+            "preferred", "prefer" -> "prefer"
+            "required", "require" -> "require"
+            "verify-ca" -> "verify-ca"
+            "verify-identity", "verify-full" -> "verify-full"
+            else -> error("Unsupported PostgreSQL ssl-mode: $configured")
+        }
+    }
 
     val maxPages: Int
         get() = config.getInt("warehouse.max-pages", 5).coerceAtLeast(1)
@@ -130,9 +152,15 @@ object PluginConfig {
 
     private fun rebuildCategories(): Map<String, WarehouseCategory> {
         val section = config.getConfigurationSection("warehouse.categories") ?: return emptyMap()
-        return section.getKeys(false).associateWith { name ->
-            val patterns = config.getStringList("warehouse.categories.$name")
-            WarehouseCategory(name, patterns)
+        return buildMap {
+            section.getKeys(false).forEach { name ->
+                if (name.length > MAX_CATEGORY_NAME_LENGTH) {
+                    warning("Ignoring warehouse category '$name': name exceeds $MAX_CATEGORY_NAME_LENGTH characters.")
+                    return@forEach
+                }
+                val patterns = config.getStringList("warehouse.categories.$name")
+                put(name, WarehouseCategory(name, patterns))
+            }
         }
     }
 
@@ -159,4 +187,6 @@ object PluginConfig {
         cachedAutoStoreSound = null
         autoStoreSoundParsed = false
     }
+
+    private const val MAX_CATEGORY_NAME_LENGTH = 64
 }

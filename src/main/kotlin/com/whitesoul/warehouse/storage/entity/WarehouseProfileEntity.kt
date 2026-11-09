@@ -3,14 +3,16 @@ package com.whitesoul.warehouse.storage.entity
 import com.whitesoul.warehouse.model.WarehouseProfile
 import taboolib.expansion.Id
 import taboolib.expansion.Length
+import taboolib.expansion.UniqueKey
 import java.util.UUID
 
 class WarehouseProfileEntity {
 
     @Id
+    @UniqueKey
     var uuid: UUID = UUID.randomUUID()
 
-    @Length(32)
+    @Length(64)
     var name: String = ""
 
     var maxPages: Int = 1

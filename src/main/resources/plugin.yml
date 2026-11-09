@@ -1,0 +1,5 @@
+name: SoulWarehouse
+main: com.whitesoul.warehouse.taboolib.platform.BukkitPlugin
+version: '${version}'
+api-version: '1.21.11'
+softdepend: [PlaceholderAPI]

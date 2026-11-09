@@ -10,11 +10,15 @@ import java.util.UUID
 class WarehousePageData(
     val owner: UUID,
     val page: Int,
-    val contents: Array<ItemStack?> = arrayOfNulls(SLOT_COUNT),
-    var remark: String = "",
-    var category: String = "",
-    var updatedAt: Long = System.currentTimeMillis(),
+    internal val contents: Array<ItemStack?> = arrayOfNulls(SLOT_COUNT),
+    remark: String = "",
+    category: String = "",
+    updatedAt: Long = System.currentTimeMillis(),
 ) {
+
+    private var remarkValue = remark
+    private var categoryValue = category
+    private var updatedAtValue = updatedAt
 
     /** 所有对 [contents] 数组的读写都必须持有此锁，防止异步保存线程与主线程并发访问。 */
     @Transient
@@ -32,7 +36,7 @@ class WarehousePageData(
                 return
             }
             contents[slot] = normalizeStoredItem(itemStack)
-            updatedAt = System.currentTimeMillis()
+            updatedAtValue = System.currentTimeMillis()
         }
     }
 
@@ -55,9 +59,55 @@ class WarehousePageData(
                 }
             }
             if (changed) {
-                updatedAt = System.currentTimeMillis()
+                updatedAtValue = System.currentTimeMillis()
             }
             return changed
+        }
+    }
+
+    fun getRemark(): String {
+        synchronized(lock) {
+            return remarkValue
+        }
+    }
+
+    fun updateRemark(remark: String): Boolean {
+        synchronized(lock) {
+            if (remarkValue == remark) {
+                return false
+            }
+            remarkValue = remark
+            updatedAtValue = System.currentTimeMillis()
+            return true
+        }
+    }
+
+    fun getCategory(): String {
+        synchronized(lock) {
+            return categoryValue
+        }
+    }
+
+    fun updateCategory(category: String): Boolean {
+        synchronized(lock) {
+            if (categoryValue == category) {
+                return false
+            }
+            categoryValue = category
+            updatedAtValue = System.currentTimeMillis()
+            return true
+        }
+    }
+
+    fun markUpdated() {
+        synchronized(lock) {
+            updatedAtValue = System.currentTimeMillis()
+        }
+    }
+
+    fun getUpdatedAt(): Long {
+        synchronized(lock) {
+            return updatedAtValue
         }
     }
 
@@ -74,6 +124,19 @@ class WarehousePageData(
         }
     }
 
+    fun snapshotForPersistence(): WarehousePageData {
+        synchronized(lock) {
+            return WarehousePageData(
+                owner = owner,
+                page = page,
+                contents = Array(SLOT_COUNT) { index -> contents[index].cloneOrNull() },
+                remark = remarkValue,
+                category = categoryValue,
+                updatedAt = updatedAtValue,
+            )
+        }
+    }
+
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other !is WarehousePageData) return false
@@ -85,7 +148,9 @@ class WarehousePageData(
     }
 
     override fun toString(): String {
-        return "WarehousePageData(owner=$owner, page=$page, remark='$remark', category='$category')"
+        synchronized(lock) {
+            return "WarehousePageData(owner=$owner, page=$page, remark='$remarkValue', category='$categoryValue')"
+        }
     }
 
     companion object {

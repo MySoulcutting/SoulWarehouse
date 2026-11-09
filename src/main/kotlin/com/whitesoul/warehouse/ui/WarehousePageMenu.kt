@@ -16,6 +16,10 @@ object WarehousePageMenu {
             player.sendLang("storage-unavailable", WarehouseService.getLastError() ?: "unknown")
             return
         }
+        if (!WarehouseService.isOwnerLoaded(player.uniqueId)) {
+            MenuSupport.loadOwner(player, player.uniqueId, player.name) { openSelf(player, page) }
+            return
+        }
         val profile = WarehouseService.touchProfile(player)
         if (!WarehouseService.isPageAccessible(player, page)) {
             player.sendLang("page-locked", page)
@@ -40,7 +44,7 @@ object WarehousePageMenu {
             autoStack(true)
 
             // 背景填充（通过 char 设置，map 会自动填充所有 B 字符位置）
-            set(bgChar, PageUiConfig.background.buildItem(fallbackMaterial = org.bukkit.Material.STAINED_GLASS_PANE))
+            set(bgChar, PageUiConfig.background.buildItem(fallbackMaterial = org.bukkit.Material.GRAY_STAINED_GLASS_PANE))
 
             rule {
                 checkSlot { _, itemStack, slot ->
@@ -66,7 +70,7 @@ object WarehousePageMenu {
                     inventory.setItem(slot, snapshot[index])
                 }
                 inactiveSlots.forEach { slot ->
-                    inventory.setItem(slot, PageUiConfig.disabledStorage.buildItem(fallbackMaterial = org.bukkit.Material.STAINED_GLASS_PANE))
+                    inventory.setItem(slot, PageUiConfig.disabledStorage.buildItem(fallbackMaterial = org.bukkit.Material.LIGHT_GRAY_STAINED_GLASS_PANE))
                 }
             }
 
@@ -88,7 +92,7 @@ object WarehousePageMenu {
             }
             // 没有上一页时，上一页按钮位置显示背景
             if (page <= 1) {
-                set(prevChar, PageUiConfig.background.buildItem(fallbackMaterial = org.bukkit.Material.STAINED_GLASS_PANE))
+                set(prevChar, PageUiConfig.background.buildItem(fallbackMaterial = org.bukkit.Material.GRAY_STAINED_GLASS_PANE))
                 onClick(prevChar) { it.isCancelled = true }
             }
 
@@ -139,7 +143,7 @@ object WarehousePageMenu {
                 }
             }
             if (!(page < profile.maxPages && page < PluginConfig.maxPages)) {
-                set(nextChar, PageUiConfig.background.buildItem(fallbackMaterial = org.bukkit.Material.STAINED_GLASS_PANE))
+                set(nextChar, PageUiConfig.background.buildItem(fallbackMaterial = org.bukkit.Material.GRAY_STAINED_GLASS_PANE))
                 onClick(nextChar) { it.isCancelled = true }
             }
 

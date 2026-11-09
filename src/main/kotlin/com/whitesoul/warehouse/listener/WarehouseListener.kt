@@ -1,16 +1,18 @@
 package com.whitesoul.warehouse.listener
 
 import com.whitesoul.warehouse.config.PluginConfig
+import com.whitesoul.warehouse.placeholder.WarehousePlaceholders
 import com.whitesoul.warehouse.service.WarehouseRemarkInputService
 import com.whitesoul.warehouse.service.WarehouseService
 import com.whitesoul.warehouse.service.WarehouseSessionService
 import com.whitesoul.warehouse.ui.PageUiConfig
 import com.whitesoul.warehouse.util.DebugLogger
 import org.bukkit.entity.Player
+import org.bukkit.event.entity.EntityPickupItemEvent
 import org.bukkit.event.player.PlayerJoinEvent
 import org.bukkit.event.player.PlayerKickEvent
-import org.bukkit.event.player.PlayerPickupItemEvent
 import org.bukkit.event.player.PlayerQuitEvent
+import org.bukkit.event.server.PluginEnableEvent
 import taboolib.common.platform.event.EventPriority
 import taboolib.common.platform.event.SubscribeEvent
 import taboolib.common.platform.function.submitAsync
@@ -25,17 +27,25 @@ object WarehouseListener {
         if (!WarehouseService.isAvailable() || !player.hasPermission("soulwarehouse.use")) return
         // 异步预热缓存，避免后续自动拾取/打开菜单时在主线程触发数据库 IO。
         submitAsync {
-            WarehouseService.preloadOwner(player.uniqueId)
+            WarehouseService.preloadOwner(player.uniqueId, player.name)
+        }
+    }
+
+    /** PlaceholderAPI 在本插件之后启用（如 reload）时兜底注册变量。 */
+    @SubscribeEvent
+    fun onPluginEnable(event: PluginEnableEvent) {
+        if (event.plugin.name.equals("PlaceholderAPI", ignoreCase = true)) {
+            WarehousePlaceholders.setup()
         }
     }
 
     @SubscribeEvent(EventPriority.MONITOR)
-    fun onPickup(event: PlayerPickupItemEvent) {
+    fun onPickup(event: EntityPickupItemEvent) {
         if (event.isCancelled) {
             return
         }
-        val player = event.player
-        if (!WarehouseService.isAvailable() || !player.hasPermission("soulwarehouse.use")) {
+        val player = event.entity as? Player ?: return
+        if (!WarehouseService.isAvailable() || !WarehouseService.isOwnerLoaded(player.uniqueId) || !player.hasPermission("soulwarehouse.use")) {
             return
         }
         // 玩家个人关闭了自动拾取入仓
@@ -88,14 +98,17 @@ object WarehouseListener {
     }
 
     private fun handleLeave(player: Player) {
-        // 下线/被踢统一走同一套收尾逻辑，保证会话与缓存都能被清理。
-        DebugLogger.timed("handleLeave save player=${player.name}") {
-            WarehouseService.saveOwnerPages(player.uniqueId, force = true)
-            WarehouseService.saveProfile(player.uniqueId, force = true)
-        }
+        val uuid = player.uniqueId
+        val playerName = player.name
         WarehouseRemarkInputService.clear(player)
         WarehouseSessionService.end(player)
-        // 保存完毕后驱逐缓存，防止离线玩家数据长期驻留内存。
-        WarehouseService.evictOwner(player.uniqueId)
+        // 退出事件位于主线程，数据库落盘和缓存驱逐放到异步任务。
+        submitAsync {
+            DebugLogger.timed("handleLeave save player=$playerName") {
+                WarehouseService.saveOwnerPages(uuid, force = true)
+                WarehouseService.saveProfile(uuid, force = true)
+            }
+            WarehouseService.evictOwner(uuid)
+        }
     }
 }

@@ -25,7 +25,6 @@ data class UiItemTemplate(
     val name: String,
     val lore: List<String> = emptyList(),
     val amount: Int = 1,
-    val durability: Short = 0,
 )
 
 // ============================================================
@@ -65,7 +64,6 @@ internal object UiConfigSupport {
             name = section.getString("name", fallback.name) ?: fallback.name,
             lore = section.getStringList("lore").ifEmpty { fallback.lore },
             amount = section.getInt("amount", fallback.amount).coerceAtLeast(1),
-            durability = section.getInt("durability", fallback.durability.toInt()).toShort(),
         )
     }
 
@@ -140,7 +138,7 @@ object HomeUiConfig {
         val rows = layout.size.coerceIn(1, 6)
 
         val filler = UiConfigSupport.readItem(config, "items.filler",
-            UiItemTemplate(char = 'F', material = Material.STAINED_GLASS_PANE.name, name = " ", durability = 7))
+            UiItemTemplate(char = 'F', material = Material.GRAY_STAINED_GLASS_PANE.name, name = " "))
         val pageItem = UiConfigSupport.readItem(config, "items.page",
             UiItemTemplate(char = 'P', material = Material.CHEST.name, name = "&6仓库第 {page} 页"))
         val lockedPageItem = UiConfigSupport.readItem(config, "items.locked-page",
@@ -233,7 +231,7 @@ object InspectHomeUiConfig {
         val rows = layout.size.coerceIn(1, 6)
 
         val filler = UiConfigSupport.readItem(config, "items.filler",
-            UiItemTemplate(char = 'F', material = Material.STAINED_GLASS_PANE.name, name = " ", durability = 7))
+            UiItemTemplate(char = 'F', material = Material.GRAY_STAINED_GLASS_PANE.name, name = " "))
         val pageItem = UiConfigSupport.readItem(config, "items.page",
             UiItemTemplate(char = 'P', material = Material.ENDER_CHEST.name, name = "&6仓库第 {page} 页"))
         val lockedPageItem = UiConfigSupport.readItem(config, "items.locked-page",
@@ -327,9 +325,9 @@ object PageUiConfig {
         val rows = layout.size.coerceIn(1, 6)
 
         val background = UiConfigSupport.readItem(config, "items.background",
-            UiItemTemplate(char = 'B', material = Material.STAINED_GLASS_PANE.name, name = " ", durability = 7))
+            UiItemTemplate(char = 'B', material = Material.GRAY_STAINED_GLASS_PANE.name, name = " "))
         val disabledStorage = UiConfigSupport.readItem(config, "items.disabled-storage",
-            UiItemTemplate(material = Material.STAINED_GLASS_PANE.name, name = "&8不可用槽位", durability = 8))
+            UiItemTemplate(material = Material.LIGHT_GRAY_STAINED_GLASS_PANE.name, name = "&8不可用槽位"))
         val previousButton = UiConfigSupport.readItem(config, "items.previous",
             UiItemTemplate(char = '<', material = Material.ARROW.name, name = "&e上一页"))
         val currentButton = UiConfigSupport.readItem(config, "items.current",
@@ -430,9 +428,9 @@ object InspectPageUiConfig {
         val rows = layout.size.coerceIn(1, 6)
 
         val background = UiConfigSupport.readItem(config, "items.background",
-            UiItemTemplate(char = 'B', material = Material.STAINED_GLASS_PANE.name, name = " ", durability = 7))
+            UiItemTemplate(char = 'B', material = Material.GRAY_STAINED_GLASS_PANE.name, name = " "))
         val disabledStorage = UiConfigSupport.readItem(config, "items.disabled-storage",
-            UiItemTemplate(material = Material.STAINED_GLASS_PANE.name, name = "&8不可用槽位", durability = 8))
+            UiItemTemplate(material = Material.LIGHT_GRAY_STAINED_GLASS_PANE.name, name = "&8不可用槽位"))
         val previousButton = UiConfigSupport.readItem(config, "items.previous",
             UiItemTemplate(char = '<', material = Material.ARROW.name, name = "&e上一页"))
         val readonlyButton = UiConfigSupport.readItem(config, "items.readonly",
@@ -526,7 +524,7 @@ object CategoryUiConfig {
         val maxRows = layout.size.coerceIn(1, 6)
 
         val filler = UiConfigSupport.readItem(config, "items.filler",
-            UiItemTemplate(char = 'F', material = Material.STAINED_GLASS_PANE.name, name = " ", durability = 7))
+            UiItemTemplate(char = 'F', material = Material.GRAY_STAINED_GLASS_PANE.name, name = " "))
 
         val defaultCategoryItem = UiConfigSupport.readItem(config, "items.default-category",
             UiItemTemplate(material = Material.BARRIER.name, name = "&e默认分类"))
@@ -588,6 +586,5 @@ internal fun UiItemTemplate.buildItem(
         name = UiConfigSupport.formatText(name, placeholders),
         lore = UiConfigSupport.formatLore(lore, placeholders, skipBlankKeys),
         amount = amount,
-        durability = durability,
     )
 }

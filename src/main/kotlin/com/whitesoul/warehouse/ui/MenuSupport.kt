@@ -9,6 +9,7 @@ import org.bukkit.entity.Player
 import org.bukkit.inventory.ItemStack
 import taboolib.common.platform.function.submit
 import taboolib.common.platform.function.submitAsync
+import taboolib.platform.util.sendLang
 import java.util.UUID
 
 object MenuSupport {
@@ -19,20 +20,45 @@ object MenuSupport {
         name: String,
         lore: List<String> = emptyList(),
         amount: Int = 1,
-        durability: Short = 0,
     ): ItemStack {
-        val item = ItemStack(material, amount, durability)
+        val item = ItemStack.of(material, amount)
         val meta = item.itemMeta
         if (meta != null) {
-            meta.displayName = color(name)
-            meta.lore = lore.map(::color)
-            item.itemMeta = meta
+            meta.setDisplayName(color(name))
+            meta.setLore(lore.map(::color))
+            item.setItemMeta(meta)
         }
         return item
     }
 
     fun storageCapacity(): Int {
         return PageUiConfig.storageCapacity
+    }
+
+    fun loadOwner(
+        viewer: Player,
+        owner: UUID,
+        fallbackName: String,
+        onLoaded: () -> Unit,
+    ) {
+        if (WarehouseService.isOwnerLoaded(owner)) {
+            onLoaded()
+            return
+        }
+        submitAsync {
+            val loaded = WarehouseService.preloadOwner(owner, fallbackName)
+            val error = WarehouseService.getOwnerLoadError(owner)
+                ?: WarehouseService.getLastError()
+                ?: "unknown"
+            submit {
+                if (!viewer.isOnline) return@submit
+                if (loaded) {
+                    onLoaded()
+                } else {
+                    viewer.sendLang("storage-unavailable", error)
+                }
+            }
+        }
     }
 
     fun persistPageContents(owner: UUID, page: Int, contents: Array<ItemStack?>, save: Boolean) {
